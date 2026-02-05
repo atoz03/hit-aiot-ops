@@ -18,6 +18,23 @@
   - 或 cgroup v2
   - 或 cgroup v1 的 cpu controller
 
+你还需要：
+- 控制节点/构建机具备 `sudo` 权限（安装依赖、写 systemd、写 /opt、CPU 限流都需要）
+- 控制节点/构建机可访问外网下载依赖（Go/Node）；若不能访问外网，按“方式 B”在可联网机器构建后再复制产物
+
+控制节点/构建机建议先装基础工具（按系统二选一）：
+
+Ubuntu/Debian：
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl ca-certificates openssl tar
+```
+
+Rocky/RHEL：
+```bash
+sudo dnf install -y git curl ca-certificates openssl tar
+```
+
 提示：在每台计算节点上运行 `scripts/node_prereq_check.sh` 做前置检查（不修改系统）。
 
 ## 0.1 你要在哪台机器“构建”？
@@ -51,7 +68,7 @@ Ubuntu/Debian（推荐官方 tarball，版本可控）：
 sudo apt-get update
 sudo apt-get install -y curl ca-certificates tar
 curl -fsSLo /tmp/go.tar.gz https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
-sudo rm -rf /usr/local/go
+if [[ -d /usr/local/go ]]; then sudo mv /usr/local/go "/usr/local/go.bak.$(date +%s)"; fi
 sudo tar -C /usr/local -xzf /tmp/go.tar.gz
 echo 'export PATH=/usr/local/go/bin:$PATH' | sudo tee /etc/profile.d/go.sh
 source /etc/profile.d/go.sh
@@ -62,7 +79,7 @@ Rocky/RHEL（同样建议官方 tarball）：
 ```bash
 sudo dnf install -y curl ca-certificates tar
 curl -fsSLo /tmp/go.tar.gz https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
-sudo rm -rf /usr/local/go
+if [[ -d /usr/local/go ]]; then sudo mv /usr/local/go "/usr/local/go.bak.$(date +%s)"; fi
 sudo tar -C /usr/local -xzf /tmp/go.tar.gz
 echo 'export PATH=/usr/local/go/bin:$PATH' | sudo tee /etc/profile.d/go.sh
 source /etc/profile.d/go.sh
@@ -100,6 +117,21 @@ pnpm -v
 sudo dnf install -y curl ca-certificates
 curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
 sudo dnf install -y nodejs
+node -v
+corepack enable
+corepack prepare pnpm@10.28.0 --activate
+pnpm -v
+```
+
+如果你所在环境不允许 `curl | bash`，可改用 Node.js 官方 tarball（示例；你需要先选定版本号与架构）：
+```bash
+NODE_VERSION="22.x.y"   # 例如 22.11.0；请以 nodejs.org/dist 为准
+NODE_ARCH="x64"         # amd64 用 x64；arm64 用 arm64
+curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
+sudo mkdir -p /usr/local/lib/nodejs
+sudo tar -C /usr/local/lib/nodejs -xJf /tmp/node.tar.xz
+echo "export PATH=/usr/local/lib/nodejs/node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin:\$PATH" | sudo tee /etc/profile.d/nodejs.sh
+source /etc/profile.d/nodejs.sh
 node -v
 corepack enable
 corepack prepare pnpm@10.28.0 --activate
@@ -145,6 +177,25 @@ postgres://gpuops:gpuops@127.0.0.1:5432/gpuops?sslmode=disable
 1) 确认数据库可从控制器机器访问
 2) 规划数据保留策略（`usage_records` 会持续增长）
 
+最小可行的连通性验证（在控制节点执行；需要 `psql` 客户端）：
+
+Ubuntu/Debian：
+```bash
+sudo apt-get update
+sudo apt-get install -y postgresql-client
+```
+
+Rocky/RHEL：
+```bash
+sudo dnf install -y postgresql
+```
+
+验证：
+```bash
+export DATABASE_DSN='postgres://gpuops:gpuops@127.0.0.1:5432/gpuops?sslmode=disable'
+psql "${DATABASE_DSN}" -c 'select 1;'
+```
+
 ## 3. 部署控制器（controller）
 
 ### 3.1 构建 Linux 二进制（控制器+Agent）
@@ -162,6 +213,13 @@ scripts/build_linux.sh
 - `bin/controller`
 - `bin/node-agent`
 
+如果你的目标机器不是 amd64（例如 arm64），请在构建时指定架构：
+
+```bash
+export GOARCH=arm64
+scripts/build_linux.sh
+```
+
 ### 3.2 构建前端（Vue3，必须）
 
 控制器会自动托管 `web/dist/`。请在构建机执行：
@@ -173,6 +231,13 @@ pnpm build
 ```
 
 如果你是“方式 A（控制节点本机构建）”：构建产物就在本机 `web/dist/`。
+
+并把前端产物放到控制器要托管的目录（与配置 `web_dir` 保持一致）：
+
+```bash
+sudo mkdir -p /opt/gpu-controller/web/dist
+sudo cp -a web/dist/. /opt/gpu-controller/web/dist/
+```
 
 如果你是“方式 B（独立构建机构建）”：你需要把 `web/dist/` 复制到控制节点某个目录，例如：
 - `/opt/gpu-controller/web/dist`
@@ -202,7 +267,8 @@ rsync -av web/dist/ <user>@<controller-host>:/opt/gpu-controller/web/dist/
 拷贝 `config/controller.yaml` 为生产配置（建议放在控制节点）：
 
 ```bash
-cp config/controller.yaml /opt/gpu-controller/controller.yaml
+sudo mkdir -p /opt/gpu-controller
+sudo cp config/controller.yaml /opt/gpu-controller/controller.yaml
 ```
 
 修改至少以下字段：
@@ -218,10 +284,8 @@ cp config/controller.yaml /opt/gpu-controller/controller.yaml
 在控制节点：
 
 ```bash
-sudo mkdir -p /opt/gpu-controller
 sudo cp bin/controller /opt/gpu-controller/controller
 sudo chmod +x /opt/gpu-controller/controller
-sudo cp /opt/gpu-controller/controller.yaml /opt/gpu-controller/controller.yaml
 
 sudo cp systemd/gpu-controller.service /etc/systemd/system/gpu-controller.service
 sudo systemctl daemon-reload

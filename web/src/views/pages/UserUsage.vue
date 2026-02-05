@@ -53,7 +53,7 @@ async function query() {
   error.value = "";
   records.value = [];
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl);
     const r = await client.userUsage(username.value.trim(), limit.value);
     records.value = r.records ?? [];
     setDefaultUsername(username.value.trim());

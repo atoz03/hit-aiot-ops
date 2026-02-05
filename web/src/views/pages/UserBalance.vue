@@ -54,7 +54,7 @@ async function query() {
   error.value = "";
   resp.value = null;
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl);
     const r = await client.userBalance(username.value.trim());
     resp.value = r;
     setDefaultUsername(username.value.trim());

@@ -50,7 +50,7 @@ function trimSlashRight(v: string): string {
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
-    private readonly adminToken: string,
+    private readonly opts: { adminToken?: string; csrfToken?: string } = {},
   ) {}
 
   private url(path: string): string {
@@ -59,8 +59,15 @@ export class ApiClient {
   }
 
   private adminHeaders(): Record<string, string> {
-    if (!this.adminToken?.trim()) return {};
-    return { Authorization: `Bearer ${this.adminToken.trim()}` };
+    const tok = this.opts.adminToken?.trim();
+    if (!tok) return {};
+    return { Authorization: `Bearer ${tok}` };
+  }
+
+  private csrfHeaders(): Record<string, string> {
+    const t = this.opts.csrfToken?.trim();
+    if (!t) return {};
+    return { "X-CSRF-Token": t };
   }
 
   private async readText(res: Response): Promise<string> {
@@ -83,7 +90,7 @@ export class ApiClient {
   private async postJson<T>(path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
     const res = await fetch(this.url(path), {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
+      headers: { "Content-Type": "application/json", ...this.csrfHeaders(), ...headers },
       body: JSON.stringify(body),
       credentials: "include",
     });
@@ -173,7 +180,8 @@ export class ApiClient {
     if (params.to?.trim()) q.set("to", params.to.trim());
     q.set("limit", String(params.limit ?? 20000));
     const res = await fetch(this.url(`/api/admin/usage/export.csv?${q.toString()}`), {
-      headers: this.adminHeaders(),
+      headers: { ...this.adminHeaders() },
+      credentials: "include",
     });
     if (!res.ok) {
       const text = await this.readText(res);

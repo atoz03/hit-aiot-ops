@@ -21,7 +21,7 @@ export const authState = reactive<AuthState>({
 });
 
 export async function refreshAuth(): Promise<void> {
-  const client = new ApiClient(settingsState.baseUrl, "");
+  const client = new ApiClient(settingsState.baseUrl);
   const me = await client.authMe();
   authState.checked = true;
   authState.authenticated = !!me.authenticated;
@@ -32,14 +32,13 @@ export async function refreshAuth(): Promise<void> {
 }
 
 export async function login(username: string, password: string): Promise<void> {
-  const client = new ApiClient(settingsState.baseUrl, "");
+  const client = new ApiClient(settingsState.baseUrl);
   await client.authLogin(username, password);
   await refreshAuth();
 }
 
 export async function logout(): Promise<void> {
-  const client = new ApiClient(settingsState.baseUrl, "");
+  const client = new ApiClient(settingsState.baseUrl);
   await client.authLogout();
   await refreshAuth();
 }
-

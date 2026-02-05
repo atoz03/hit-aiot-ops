@@ -12,6 +12,43 @@
 CSRF 说明（Web 登录场景）：
 - 通过 cookie 会话访问管理员接口时，非 GET 请求需要携带 `X-CSRF-Token`（从 `GET /api/auth/me` 返回的 `csrf_token` 获取）
 
+## Web 登录与初始化
+
+### `POST /api/admin/bootstrap`（管理员，仅首次）
+
+用途：首次上线初始化管理员账号（用于 Web 登录）。
+
+限制：
+- 只允许执行一次（当 `admin_accounts` 表为空时才允许）
+- 必须使用 `Authorization: Bearer <adminToken>` 调用（禁止用 session 自举）
+
+请求：
+```json
+{"username":"admin","password":"ChangeMe_123456"}
+```
+
+### `GET /api/auth/me`
+
+用途：查询当前 cookie 会话是否已登录；并获取 CSRF token。
+
+返回（已登录示例）：
+```json
+{"authenticated":true,"username":"admin","role":"admin","expires_at":"2026-02-05T16:00:00Z","csrf_token":"..."}
+```
+
+### `POST /api/auth/login`
+
+请求：
+```json
+{"username":"admin","password":"..."}
+```
+
+返回：`{"ok":true}`（并在响应头下发 HttpOnly cookie）。
+
+### `POST /api/auth/logout`
+
+返回：`{"ok":true}`（并清除 cookie）。
+
 ## 健康检查
 
 ### `GET /healthz`

@@ -54,7 +54,7 @@ async function reload() {
   loading.value = true;
   error.value = "";
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl);
     const h = await client.healthz();
     healthOk.value = !!h.ok;
     const metrics = await client.metricsText();

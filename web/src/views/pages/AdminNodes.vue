@@ -4,7 +4,7 @@
       <div class="row">
         <div>
           <div class="title">节点状态</div>
-          <div class="sub">需要管理员 Token：GET /api/admin/nodes</div>
+          <div class="sub">需要管理员登录：GET /api/admin/nodes</div>
         </div>
         <div class="row">
           <el-button :loading="loading" type="primary" @click="reload">刷新</el-button>
@@ -33,6 +33,7 @@
 import { ref } from "vue";
 import { ApiClient, type NodeStatus } from "../../lib/api";
 import { settingsState } from "../../lib/settingsStore";
+import { authState } from "../../lib/authStore";
 
 const loading = ref(false);
 const error = ref("");
@@ -43,7 +44,7 @@ async function reload() {
   error.value = "";
   rows.value = [];
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     const r = await client.adminNodes(200);
     rows.value = r.nodes ?? [];
   } catch (e: any) {

@@ -4,7 +4,7 @@
       <div class="row">
         <div>
           <div class="title">用户管理</div>
-          <div class="sub">需要管理员 Token：GET /api/admin/users，POST /api/users/:username/recharge</div>
+          <div class="sub">需要管理员登录：GET /api/admin/users，POST /api/users/:username/recharge</div>
         </div>
         <div class="row">
           <el-button :loading="loading" type="primary" @click="reload">刷新</el-button>
@@ -51,6 +51,7 @@
 import { ref } from "vue";
 import { ApiClient } from "../../lib/api";
 import { settingsState } from "../../lib/settingsStore";
+import { authState } from "../../lib/authStore";
 
 type UserRow = { username: string; balance: number; status: string };
 
@@ -77,7 +78,7 @@ async function reload() {
   error.value = "";
   rows.value = [];
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     const r = await client.adminUsers();
     rows.value = (r.users ?? []).map(toUserRow);
   } catch (e: any) {
@@ -98,7 +99,7 @@ async function doRecharge() {
   rechargeLoading.value = true;
   error.value = "";
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     await client.adminRecharge(rechargeUser.value, rechargeAmount.value, rechargeMethod.value);
     rechargeVisible.value = false;
     await reload();

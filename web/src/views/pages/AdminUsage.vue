@@ -4,7 +4,7 @@
       <div class="row">
         <div>
           <div class="title">使用记录</div>
-          <div class="sub">需要管理员 Token：GET /api/admin/usage，GET /api/admin/usage/export.csv</div>
+          <div class="sub">需要管理员登录：GET /api/admin/usage，GET /api/admin/usage/export.csv</div>
         </div>
         <div class="row">
           <el-button :loading="loading" type="primary" @click="reload">刷新</el-button>
@@ -49,6 +49,7 @@ import { ref } from "vue";
 import { ElMessage } from "element-plus";
 import { ApiClient, type UsageRecord } from "../../lib/api";
 import { settingsState } from "../../lib/settingsStore";
+import { authState } from "../../lib/authStore";
 
 const loading = ref(false);
 const exporting = ref(false);
@@ -65,7 +66,7 @@ async function reload() {
   error.value = "";
   records.value = [];
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     const r = await client.adminUsage(username.value, limit.value);
     records.value = r.records ?? [];
   } catch (e: any) {
@@ -79,7 +80,7 @@ async function exportCSV() {
   exporting.value = true;
   error.value = "";
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     const blob = await client.adminExportUsageCSV({
       username: username.value,
       from: from.value,

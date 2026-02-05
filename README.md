@@ -43,9 +43,21 @@ curl -s http://127.0.0.1:8000/healthz
 监控指标：
 - `http://127.0.0.1:8000/metrics`
 
-Web 管理页（最小可用）：
+Web 管理页：
 - 浏览器打开 `http://127.0.0.1:8000/`
 - 需要先创建管理员账号并在 `/login` 登录（详见 `docs/runbook.md`）
+
+开发环境快速初始化管理员账号（只需做一次）：
+
+```bash
+curl -fsS -H "Authorization: Bearer dev-admin-token" \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8000/api/admin/bootstrap \
+  -d '{"username":"admin","password":"ChangeMe_123456"}'
+```
+
+然后访问：
+- `http://127.0.0.1:8000/login`
 
 ### 3) 启动节点 Agent（同机模拟）
 
@@ -56,7 +68,7 @@ NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-to
 ```
 
 说明：
-- 没有 NVIDIA 驱动或没有 `nvidia-smi` 时，Agent 会优雅降级为只心跳上报（不报 GPU 进程）。
+- 没有 NVIDIA 驱动或没有 `nvidia-smi` 时，Agent 仍会心跳上报与 CPU 计费/控制（但不会上报 GPU 进程）。
 - CPU 控制优先使用 `systemd CPUQuota`；否则按 `cgroup v2` 再到 `cgroup v1(cpu.cfs_*)` 兜底。
 - 为防止网络重试导致重复扣费，Agent 每次上报携带 `report_id`，控制器做幂等去重。
 

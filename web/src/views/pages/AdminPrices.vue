@@ -4,7 +4,7 @@
       <div class="row">
         <div>
           <div class="title">价格配置</div>
-          <div class="sub">需要管理员 Token：GET/POST /api/admin/prices（CPU 使用模型名 CPU_CORE）</div>
+          <div class="sub">需要管理员登录：GET/POST /api/admin/prices（CPU 使用模型名 CPU_CORE）</div>
         </div>
         <div class="row">
           <el-button :loading="loading" type="primary" @click="reload">刷新</el-button>
@@ -48,6 +48,7 @@
 import { ref } from "vue";
 import { ApiClient } from "../../lib/api";
 import { settingsState } from "../../lib/settingsStore";
+import { authState } from "../../lib/authStore";
 
 type PriceRow = { model: string; price: number };
 
@@ -72,7 +73,7 @@ async function reload() {
   error.value = "";
   rows.value = [];
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     const r = await client.adminPrices();
     rows.value = (r.prices ?? []).map(toRow).sort((a, b) => a.model.localeCompare(b.model));
   } catch (e: any) {
@@ -92,7 +93,7 @@ async function save() {
   editLoading.value = true;
   error.value = "";
   try {
-    const client = new ApiClient(settingsState.baseUrl, settingsState.adminToken);
+    const client = new ApiClient(settingsState.baseUrl, { csrfToken: authState.csrfToken });
     await client.adminSetPrice(editModel.value.trim(), editPrice.value);
     editVisible.value = false;
     await reload();
