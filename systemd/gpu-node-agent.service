@@ -1,0 +1,16 @@
+[Unit]
+Description=GPU Cluster Node Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment="NODE_ID=node01"
+Environment="CONTROLLER_URL=http://controller:8000"
+Environment="AGENT_TOKEN=replace-me"
+ExecStart=/usr/local/bin/node-agent
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

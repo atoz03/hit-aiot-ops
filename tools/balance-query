@@ -1,0 +1,13 @@
+#!/bin/bash
+# 查询用户余额（用于排障/自助）
+
+set -euo pipefail
+
+CONTROLLER_URL="${CONTROLLER_URL:-http://controller:8000}"
+USER="${1:-$(whoami)}"
+
+curl -fsS "${CONTROLLER_URL}/api/users/${USER}/balance" || {
+  echo "请求失败：请检查 CONTROLLER_URL=${CONTROLLER_URL}" >&2
+  exit 1
+}
+

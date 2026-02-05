@@ -1,0 +1,22 @@
+#!/bin/bash
+# GPU 申请工具（当前实现为“排队接口”演示版本）
+
+set -euo pipefail
+
+CONTROLLER_URL="${CONTROLLER_URL:-http://controller:8000}"
+
+GPU_TYPE="${1:-}"
+COUNT="${2:-1}"
+
+if [[ -z "${GPU_TYPE}" ]]; then
+  echo "用法：gpu-request <gpu-type> [count]" >&2
+  exit 2
+fi
+
+curl -fsS -X POST "${CONTROLLER_URL}/api/gpu/request" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$(whoami)\",\"gpu_type\":\"${GPU_TYPE}\",\"count\":${COUNT}}" || {
+  echo "请求失败：请检查 CONTROLLER_URL=${CONTROLLER_URL}" >&2
+  exit 1
+}
+

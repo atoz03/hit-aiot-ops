@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: gpuops-postgres
+    environment:
+      POSTGRES_DB: gpuops
+      POSTGRES_USER: gpuops
+      POSTGRES_PASSWORD: gpuops
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gpuops -d gpuops"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+

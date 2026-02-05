@@ -1,0 +1,45 @@
+# 控制器配置示例（开发环境）
+listen_addr: "127.0.0.1:8000"
+
+# PostgreSQL DSN
+database_dsn: "postgres://gpuops:gpuops@127.0.0.1:5432/gpuops?sslmode=disable"
+
+# Agent 上报鉴权（header: X-Agent-Token）
+agent_token: "dev-agent-token"
+
+# 管理员鉴权（header: Authorization: Bearer <token>）
+admin_token: "dev-admin-token"
+
+# 余额阈值
+warning_threshold: 100
+limited_threshold: 10
+
+# CPU 计费（按“核分钟”计费：100% CPU ≈ 1 核）
+# 优先从数据库 resource_prices 中读取模型 "CPU_CORE"；不存在时使用该兜底值
+cpu_price_per_core_minute: 0.02
+
+# 采样间隔（秒）：用于按上报周期折算费用；若 Agent 上报携带 interval_seconds，则以 Agent 为准
+sample_interval_seconds: 60
+
+# 是否启用 CPU 控制（通过 systemd/cgroup v2 对用户 slice 施加 CPUQuota）
+enable_cpu_control: true
+cpu_limit_percent_limited: 50
+cpu_limit_percent_blocked: 10
+
+# 欠费后宽限期（秒）：到期后才下发 kill
+kill_grace_period_seconds: 600
+
+# 试运行模式：只记录不扣费
+dry_run: false
+
+# 默认余额（首次见到的新用户）
+default_balance: 100
+
+# 单价兜底（数据库找不到型号时）
+default_price_per_minute: 0.1
+
+# 迁移目录（为空时自动探测 ../database/migrations）
+migration_dir: ""
+
+# Web 静态文件目录（为空时自动探测 ../web/dist；不存在则不启用）
+web_dir: ""

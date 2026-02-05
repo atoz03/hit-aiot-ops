@@ -1,0 +1,13 @@
+# Go
+**/*.test
+**/*.out
+**/bin/
+
+# 运行时数据/日志
+**/.DS_Store
+**/*.log
+**/state/
+**/tmp/
+
+# IDE
+.idea/
