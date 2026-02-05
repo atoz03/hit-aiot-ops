@@ -19,6 +19,9 @@ type Config struct {
 
 	AgentToken string `yaml:"agent_token"`
 	AdminToken string `yaml:"admin_token"`
+	// AuthSecret 用于签名 Web 登录会话（cookie）。建议使用强随机值。
+	// 若为空，控制器会回退使用 admin_token（不推荐，仅为兼容）。
+	AuthSecret string `yaml:"auth_secret"`
 
 	WarningThreshold float64 `yaml:"warning_threshold"`
 	LimitedThreshold float64 `yaml:"limited_threshold"`
@@ -36,6 +39,10 @@ type Config struct {
 
 	DefaultBalance        float64 `yaml:"default_balance"`
 	DefaultPricePerMinute float64 `yaml:"default_price_per_minute"`
+
+	// Web 登录会话配置
+	SessionHours int  `yaml:"session_hours"`
+	CookieSecure bool `yaml:"cookie_secure"`
 
 	MigrationDir string `yaml:"migration_dir"`
 	WebDir       string `yaml:"web_dir"`
@@ -80,6 +87,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AdminToken == "" {
 		return errors.New("admin_token 不能为空（用于保护 /api/admin/* 与充值/单价设置）")
+	}
+	if c.SessionHours < 0 || c.SessionHours > 720 {
+		return errors.New("session_hours 必须在 [0, 720]（0 表示禁用会话）")
 	}
 	return nil
 }

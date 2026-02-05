@@ -13,6 +13,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Store struct {
@@ -571,6 +572,53 @@ LIMIT $1`, limit)
 		out = append(out, n)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) CountAdminAccounts(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM admin_accounts`).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (s *Store) CreateAdminAccount(ctx context.Context, username string, password string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return errors.New("username 不能为空")
+	}
+	if len(password) < 8 {
+		return errors.New("password 至少 8 位")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO admin_accounts(username, password_hash)
+VALUES($1,$2)
+ON CONFLICT (username) DO NOTHING`, username, string(hash))
+	return err
+}
+
+func (s *Store) VerifyAdminPassword(ctx context.Context, username string, password string) (bool, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false, errors.New("username 不能为空")
+	}
+	var hash string
+	err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM admin_accounts WHERE username=$1`, username).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return false, nil
+	}
+	_, _ = s.db.ExecContext(ctx, `UPDATE admin_accounts SET last_login_at=NOW(), updated_at=NOW() WHERE username=$1`, username)
+	return true, nil
 }
 
 func (s *Store) queryUsageRows(

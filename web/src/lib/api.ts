@@ -4,6 +4,14 @@ export type ApiError = {
   body?: string;
 };
 
+export type AuthMeResp = {
+  authenticated: boolean;
+  username?: string;
+  role?: string;
+  expires_at?: string;
+  csrf_token?: string;
+};
+
 export type BalanceResp = {
   username: string;
   balance: number;
@@ -64,7 +72,7 @@ export class ApiClient {
   }
 
   private async getJson<T>(path: string, headers: Record<string, string> = {}): Promise<T> {
-    const res = await fetch(this.url(path), { headers });
+    const res = await fetch(this.url(path), { headers, credentials: "include" });
     if (!res.ok) {
       const text = await this.readText(res);
       throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
@@ -77,6 +85,7 @@ export class ApiClient {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
+      credentials: "include",
     });
     if (!res.ok) {
       const text = await this.readText(res);
@@ -90,12 +99,24 @@ export class ApiClient {
   }
 
   async metricsText(): Promise<string> {
-    const res = await fetch(this.url("/metrics"));
+    const res = await fetch(this.url("/metrics"), { credentials: "include" });
     if (!res.ok) {
       const text = await this.readText(res);
       throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
     }
     return await res.text();
+  }
+
+  async authMe(): Promise<AuthMeResp> {
+    return await this.getJson("/api/auth/me");
+  }
+
+  async authLogin(username: string, password: string): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/auth/login", { username, password });
+  }
+
+  async authLogout(): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/auth/logout", {});
   }
 
   async userBalance(username: string): Promise<BalanceResp> {
@@ -115,11 +136,19 @@ export class ApiClient {
   }
 
   async adminSetPrice(model: string, pricePerMinute: number): Promise<{ ok: boolean }> {
-    return await this.postJson("/api/admin/prices", { gpu_model: model, price_per_minute: pricePerMinute }, this.adminHeaders());
+    return await this.postJson(
+      "/api/admin/prices",
+      { gpu_model: model, price_per_minute: pricePerMinute },
+      this.adminHeaders(),
+    );
   }
 
   async adminRecharge(username: string, amount: number, method: string): Promise<BalanceResp> {
-    return await this.postJson(`/api/users/${encodeURIComponent(username)}/recharge`, { amount, method }, this.adminHeaders());
+    return await this.postJson(
+      `/api/users/${encodeURIComponent(username)}/recharge`,
+      { amount, method },
+      this.adminHeaders(),
+    );
   }
 
   async adminUsage(username: string, limit: number): Promise<{ records: UsageRecord[] }> {
@@ -153,4 +182,3 @@ export class ApiClient {
     return await res.blob();
   }
 }
-

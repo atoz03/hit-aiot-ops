@@ -10,6 +10,9 @@ agent_token: "dev-agent-token"
 # 管理员鉴权（header: Authorization: Bearer <token>）
 admin_token: "dev-admin-token"
 
+# Web 登录会话签名密钥（用于 cookie）。建议上线时替换为强随机值。
+auth_secret: "dev-auth-secret"
+
 # 余额阈值
 warning_threshold: 100
 limited_threshold: 10
@@ -31,6 +34,12 @@ kill_grace_period_seconds: 600
 
 # 试运行模式：只记录不扣费
 dry_run: false
+
+# Web 登录会话有效期（小时）；0 表示禁用登录会话（仅支持 admin_token）
+session_hours: 8
+
+# 是否强制 cookie secure（HTTPS 下建议 true；HTTP 调试可 false）
+cookie_secure: false
 
 # 默认余额（首次见到的新用户）
 default_balance: 100

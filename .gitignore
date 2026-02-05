@@ -17,3 +17,6 @@ web/node_modules/
 web/.vite/
 web/.env
 web/.env.*
+web/dist/
+
+helloagents/

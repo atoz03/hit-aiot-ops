@@ -49,11 +49,15 @@
         <div class="header-left">
           <el-text size="large">控制器地址：</el-text>
           <el-input v-model="settingsState.baseUrl" placeholder="留空表示当前站点" style="max-width: 340px" @change="persist" />
-          <el-text size="large" style="margin-left: 12px">管理员 Token：</el-text>
-          <el-input v-model="settingsState.adminToken" placeholder="Bearer token（仅管理员接口需要）" style="max-width: 360px" show-password @change="persist" />
         </div>
         <div class="header-right">
-          <el-button @click="persist" type="primary">保存</el-button>
+          <el-space>
+            <el-tag v-if="authState.authenticated" type="success">已登录：{{ authState.username }}</el-tag>
+            <el-tag v-else type="info">未登录</el-tag>
+            <el-button @click="persist" type="primary">保存</el-button>
+            <el-button v-if="authState.authenticated" @click="doLogout">退出</el-button>
+            <el-button v-else @click="goLogin">登录</el-button>
+          </el-space>
         </div>
       </el-header>
 
@@ -66,15 +70,26 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { persistSettings, settingsState } from "../lib/settingsStore";
+import { authState, logout } from "../lib/authStore";
 import { Coin, DataBoard, Document, Monitor, Tickets, Timer, User, UserFilled } from "@element-plus/icons-vue";
 
 const route = useRoute();
+const router = useRouter();
 const activePath = computed(() => route.path);
 
 function persist() {
   persistSettings();
+}
+
+async function doLogout() {
+  await logout();
+  await router.push("/login");
+}
+
+async function goLogin() {
+  await router.push("/login");
 }
 </script>
 

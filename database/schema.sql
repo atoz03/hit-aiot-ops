@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS nodes (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- 管理员账号（Web 登录）
+CREATE TABLE IF NOT EXISTS admin_accounts (
+    username VARCHAR(50) PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    last_login_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_username ON usage_records(username);
 CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_records(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_node ON usage_records(node_id);

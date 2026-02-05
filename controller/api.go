@@ -39,6 +39,10 @@ func (s *Server) Router() *gin.Engine {
 	})
 
 	api := r.Group("/api")
+	api.GET("/auth/me", s.handleAuthMe)
+	api.POST("/auth/login", s.handleAuthLogin)
+	api.POST("/auth/logout", s.handleAuthLogout)
+
 	api.POST("/metrics", s.authAgent(), s.handleMetrics)
 
 	api.GET("/users/:username/balance", s.handleBalance)
@@ -50,6 +54,7 @@ func (s *Server) Router() *gin.Engine {
 
 	admin := api.Group("/admin")
 	admin.Use(s.authAdmin())
+	admin.POST("/bootstrap", s.handleAdminBootstrap)
 	admin.GET("/users", s.handleAdminUsers)
 	admin.GET("/prices", s.handleAdminPrices)
 	admin.POST("/prices", s.handleAdminSetPrice)
@@ -75,11 +80,42 @@ func (s *Server) authAgent() gin.HandlerFunc {
 
 func (s *Server) authAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 1) 优先支持脚本类 Bearer admin_token
 		auth := strings.TrimSpace(c.GetHeader("Authorization"))
 		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || strings.TrimSpace(strings.TrimPrefix(auth, prefix)) != s.cfg.AdminToken {
+		if strings.HasPrefix(auth, prefix) && strings.TrimSpace(strings.TrimPrefix(auth, prefix)) == s.cfg.AdminToken {
+			c.Set("auth_method", "token")
+			c.Next()
+			return
+		}
+
+		// 2) Web 登录会话（cookie）
+		secret := strings.TrimSpace(s.cfg.AuthSecret)
+		if secret == "" {
+			secret = s.cfg.AdminToken
+		}
+		cookie, err := c.Cookie(sessionCookieName)
+		if err != nil || strings.TrimSpace(cookie) == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
+		}
+		p, err := verifySession(secret, cookie, time.Now())
+		if err != nil || p.Role != "admin" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Set("auth_method", "session")
+		c.Set("auth_user", p.Username)
+		c.Set("csrf", p.Nonce)
+
+		// CSRF：仅对“有副作用”的请求要求 header（GET 不需要）
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead && c.Request.Method != http.MethodOptions {
+			want := p.Nonce
+			got := strings.TrimSpace(c.GetHeader("X-CSRF-Token"))
+			if want == "" || got == "" || want != got {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "csrf_required"})
+				return
+			}
 		}
 		c.Next()
 	}
