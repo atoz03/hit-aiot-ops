@@ -79,6 +79,7 @@ NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-to
 - `docs/user-guide.md`：用户指南
 - `docs/admin-guide.md`：管理员指南
 - `docs/go-live-checklist.md`：上线检查清单
+- `docs/runbook.md`：一步步上线运行手册
 
 ## 测试说明
 
