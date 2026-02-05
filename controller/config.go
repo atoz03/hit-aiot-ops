@@ -20,7 +20,6 @@ type Config struct {
 	AgentToken string `yaml:"agent_token"`
 	AdminToken string `yaml:"admin_token"`
 	// AuthSecret 用于签名 Web 登录会话（cookie）。建议使用强随机值。
-	// 若为空，控制器会回退使用 admin_token（不推荐，仅为兼容）。
 	AuthSecret string `yaml:"auth_secret"`
 
 	WarningThreshold float64 `yaml:"warning_threshold"`
@@ -90,6 +89,15 @@ func (c *Config) Validate() error {
 	}
 	if c.SessionHours < 0 || c.SessionHours > 720 {
 		return errors.New("session_hours 必须在 [0, 720]（0 表示禁用会话）")
+	}
+	// 禁止任何“隐式降级”：只要启用了 Web 登录会话，就必须显式配置 auth_secret。
+	if c.SessionHours > 0 {
+		if c.AuthSecret == "" {
+			return errors.New("启用 Web 登录会话时 auth_secret 不能为空（建议 openssl rand -hex 32）")
+		}
+		if len(c.AuthSecret) < 16 {
+			return errors.New("auth_secret 长度过短：建议至少 16 字符（建议 openssl rand -hex 32）")
+		}
 	}
 	return nil
 }

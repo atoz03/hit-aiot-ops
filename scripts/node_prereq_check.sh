@@ -34,15 +34,23 @@ fi
 
 echo
 echo "==> cgroup v2 关键文件"
-for p in /sys/fs/cgroup/user.slice/user-*.slice/cpu.max 2>/dev/null; do
-  echo "found: $p"
-  break
-done || true
+found_v2=""
+for g in "/sys/fs/cgroup/user.slice/user-*.slice/cpu.max" "/sys/fs/cgroup/user-*.slice/cpu.max"; do
+  if compgen -G "$g" >/dev/null; then
+    found_v2="$(compgen -G "$g" | head -n 1)"
+    break
+  fi
+done
+if [[ -n "${found_v2}" ]]; then
+  echo "found: ${found_v2}"
+else
+  echo "not found"
+fi
 
 echo
 echo "==> cgroup v1 cpu controller"
 if [[ -r /proc/mounts ]]; then
-  if awk '{print $3,$2,$4}' /proc/mounts | grep -E '^cgroup ' | grep -q ',cpu(,|$)'; then
+  if awk '{print $3,$2,$4}' /proc/mounts | grep -E '^cgroup ' | grep -Eq ',cpu(,|$)'; then
     echo "cgroup v1 cpu: mounted"
     awk '{print $3,$2,$4}' /proc/mounts | grep -E '^cgroup ' | grep ',cpu' | head -n 3 || true
   else
@@ -56,4 +64,3 @@ echo
 echo "==> 建议"
 echo "- 若需要 CPU 限流：推荐 systemd；否则至少保证 cgroup v2 或 cgroup v1(cpu) 可用"
 echo "- Agent 需要 root 才能执行 kill / CPU 限流动作"
-

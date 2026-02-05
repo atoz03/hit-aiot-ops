@@ -90,10 +90,11 @@ func (s *Server) authAdmin() gin.HandlerFunc {
 		}
 
 		// 2) Web 登录会话（cookie）
-		secret := strings.TrimSpace(s.cfg.AuthSecret)
-		if secret == "" {
-			secret = s.cfg.AdminToken
+		if s.cfg.SessionHours == 0 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
 		}
+		secret := strings.TrimSpace(s.cfg.AuthSecret)
 		cookie, err := c.Cookie(sessionCookieName)
 		if err != nil || strings.TrimSpace(cookie) == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})

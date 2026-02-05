@@ -1,0 +1,33 @@
+name: go-test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21.x"
+          cache: true
+          cache-dependency-path: |
+            controller/go.sum
+            node-agent/go.sum
+
+      - name: 运行测试（多模块）
+        run: go test ./controller/... ./node-agent/...
+

@@ -16,10 +16,11 @@ type loginReq struct {
 }
 
 func (s *Server) handleAuthMe(c *gin.Context) {
-	secret := strings.TrimSpace(s.cfg.AuthSecret)
-	if secret == "" {
-		secret = s.cfg.AdminToken
+	if s.cfg.SessionHours == 0 {
+		c.JSON(http.StatusOK, gin.H{"authenticated": false, "session_disabled": true})
+		return
 	}
+	secret := strings.TrimSpace(s.cfg.AuthSecret)
 	cookie, err := c.Cookie(sessionCookieName)
 	if err != nil || strings.TrimSpace(cookie) == "" {
 		c.JSON(http.StatusOK, gin.H{"authenticated": false})
@@ -67,9 +68,6 @@ func (s *Server) handleAuthLogin(c *gin.Context) {
 	}
 
 	secret := strings.TrimSpace(s.cfg.AuthSecret)
-	if secret == "" {
-		secret = s.cfg.AdminToken
-	}
 	exp := time.Now().Add(time.Duration(s.cfg.SessionHours) * time.Hour).Unix()
 	token, err := signSession(secret, sessionPayload{
 		Username: req.Username,

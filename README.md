@@ -1,6 +1,6 @@
 # hit-aiot-ops（GPU 集群管理：轻量 Agent + 控制器）
 
-本仓库实现 `doc/plan.md` 中“阶段 1：核心组件（节点 Agent + 控制器 + 计费/配额）”的可运行版本：
+本仓库实现 `docs/plan.md` 中“阶段 1：核心组件（节点 Agent + 控制器 + 计费/配额）”的可运行版本：
 
 - 节点侧：`node-agent/`（Golang）每分钟采集 GPU 计算进程并上报
 - 控制器：`controller/`（Golang + Gin + PostgreSQL）接收上报、落库、计费（GPU + CPU）、下发限制动作（含 CPU 限流）
@@ -44,7 +44,8 @@ curl -s http://127.0.0.1:8000/healthz
 - `http://127.0.0.1:8000/metrics`
 
 Web 管理页（最小可用）：
-- 浏览器打开 `http://127.0.0.1:8000/`（需要手动填管理员 token 才能调用管理员接口）
+- 浏览器打开 `http://127.0.0.1:8000/`
+- 需要先创建管理员账号并在 `/login` 登录（详见 `docs/runbook.md`）
 
 ### 3) 启动节点 Agent（同机模拟）
 
@@ -74,7 +75,7 @@ NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-to
 
 ## 文档
 
-- `doc/plan.md`：总体方案与实现对照
+- `docs/plan.md`：总体方案与实现对照
 - `docs/api-reference.md`：API 参考
 - `docs/user-guide.md`：用户指南
 - `docs/admin-guide.md`：管理员指南
@@ -88,6 +89,21 @@ NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-to
 ```bash
 go test ./controller/... ./node-agent/...
 ```
+
+CI（GitHub Actions）：
+- 已配置在每次 `push` / `pull_request` 自动运行同一套测试：`.github/workflows/go-test.yml`
+
+## 提交前自动测试（Git hooks）
+
+如果你希望每次 `git commit` 都自动跑测试（失败则阻止提交），先在仓库根目录执行一次：
+
+```bash
+bash "scripts/install-githooks.sh"
+```
+
+说明：
+- 安装后，每次提交会自动执行：`go test ./controller/... ./node-agent/...`
+- 如需临时跳过（不推荐常用）：`git commit --no-verify`
 
 ## 构建与部署（生产）
 
@@ -110,7 +126,7 @@ pnpm dev
 
 ## 目录结构
 
-与 `doc/plan.md` 保持一致（核心实现已落地）：
+与 `docs/plan.md` 保持一致（核心实现已落地）：
 
 ```
 hit-aiot-ops/
