@@ -42,7 +42,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- 上报幂等表：用于防止 Agent 重试导致重复扣费
+CREATE TABLE IF NOT EXISTS metric_reports (
+    report_id TEXT PRIMARY KEY,
+    node_id VARCHAR(50) NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    interval_seconds INT NOT NULL,
+    received_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_username ON usage_records(username);
 CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_records(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_node ON usage_records(node_id);
-

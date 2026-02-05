@@ -1,0 +1,16 @@
+[Unit]
+Description=GPU Cluster Controller
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/gpu-controller
+Environment=CONTROLLER_CONFIG=/opt/gpu-controller/controller.yaml
+ExecStart=/opt/gpu-controller/controller --config /opt/gpu-controller/controller.yaml
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+

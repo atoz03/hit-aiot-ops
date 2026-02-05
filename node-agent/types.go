@@ -5,6 +5,7 @@ package main
 type MetricsData struct {
 	NodeID          string        `json:"node_id"`
 	Timestamp       string        `json:"timestamp"` // RFC3339
+	ReportID        string        `json:"report_id"`
 	IntervalSeconds int           `json:"interval_seconds,omitempty"`
 	Users           []UserProcess `json:"users"`
 }

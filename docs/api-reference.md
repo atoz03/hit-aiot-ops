@@ -18,12 +18,16 @@
 
 ### `POST /api/metrics`
 
+幂等说明：
+- `report_id` 必填且全局唯一；控制器用其做去重，避免 Agent 重试导致重复扣费
+
 请求体（示例）：
 
 ```json
 {
   "node_id": "node01",
   "timestamp": "2026-02-05T16:00:00Z",
+  "report_id": "2f6c7b3b3c3b4a8b8f1c5c3c1b2a9d10",
   "interval_seconds": 60,
   "users": [
     {
@@ -60,6 +64,17 @@
 {"username":"alice","balance":80.00,"status":"warning"}
 ```
 
+### `GET /api/users/:username/usage`
+
+参数：
+- `limit`：返回条数（默认 200，最大 5000）
+
+返回：
+
+```json
+{"records":[{"node_id":"node01","username":"alice","timestamp":"2026-02-05T16:00:00Z","cpu_percent":120.5,"memory_mb":2048,"gpu_usage":"[]","cost":0.6}]}
+```
+
 ### `POST /api/users/:username/recharge`（管理员）
 
 请求：
@@ -82,6 +97,7 @@
 
 说明：
 - CPU 计费使用特殊模型名 `CPU_CORE`（按核分钟：100% CPU ≈ 1 核）。
+- `set_cpu_quota` 需要节点支持 systemd CPUQuota 或 cgroup（v2 或 v1 的 cpu controller），且 Agent 以 root 运行。
 
 ## 排队接口（可选）
 
@@ -100,3 +116,9 @@
 ```
 
 ### `GET /api/admin/gpu/queue`（管理员）
+
+### `GET /api/admin/usage`（管理员）
+
+参数：
+- `username`：可选，按用户过滤
+- `limit`：返回条数（默认 200，最大 5000）

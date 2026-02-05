@@ -1,5 +1,25 @@
 # GPU集群管理系统设计方案
 
+## 0. 当前实现状态（代码落地，2026-02-05）
+
+说明：本仓库已把“阶段 1（核心组件）”落地为可运行代码，并补齐 CPU 计费与控制；其余阶段（如完整 Vue Web、监控栈、真实排队分配、支付对接、高可用）属于上线增强项，需要按实际资源与优先级继续推进。
+
+### 已实现（可用于试点/全量上线的核心闭环）
+1. 节点 Agent（Golang）：采集 GPU 计算进程（`nvidia-smi`）与 CPU 占用（按进程采样差分），每分钟上报到控制器
+2. 上报幂等：每次上报携带 `report_id`，控制器通过 `metric_reports` 表去重，避免网络重试导致重复扣费
+3. 控制器（Golang + Gin）：接收上报、落库、计费（GPU + CPU）、更新余额/状态、下发动作（通知/限制/终止/CPU 限流）
+4. CPU 控制三段兜底：优先 `systemd CPUQuota`，其次 `cgroup v2 cpu.max`，最后 `cgroup v1 cpu.cfs_*`（兼容无法升级到 cgroup v2 的机器）
+5. Bash Hook：在用户启动“疑似 GPU 任务”前检查余额状态（尽量不误伤）
+6. 最小可用 Web 管理页：控制器直接提供静态页（无需前端构建）用于查看余额/用户/价格/使用记录/排队队列
+7. 数据库迁移脚本：`database/migrations/`（含幂等表）
+
+### 未实现/待增强（不影响核心闭环上线，但建议排期）
+1. 完整的 Vue + Element Plus Web（当前为最小静态管理页）
+2. 真实 GPU 资源排队与分配（当前仅记录排队，不做分配）
+3. 通知渠道（邮件/企业微信/飞书）与支付对接
+4. 监控栈（Prometheus/Grafana/DCGM Exporter）与告警规则
+5. 控制器高可用（主备/负载均衡）与更细粒度的权限体系（JWT/RBAC）
+
 ## 一、需求总结
 
 ### 核心需求（按优先级）
@@ -106,6 +126,7 @@
   - 阻止启动新的GPU任务（通过bash hook拦截）
   - 已运行的任务不受影响
   - 允许SSH登录和CPU任务
+  - 同时下发 CPU 限流（例如限制到 50%），避免“欠费但用 CPU 继续跑大任务”
 
 **级别4：强制终止（余额耗尽）**
 - **条件**：余额 < 0元（欠费）
@@ -113,6 +134,7 @@
   - 发送警告通知（邮件/消息）
   - 10分钟后kill所有GPU进程
   - 禁止启动新任务
+  - 同时强限制 CPU 使用（例如限制到 10%）
 
 **关于cgroup的说明：**
 - 不使用动态cgroup限制（会让任务卡死）
@@ -125,6 +147,7 @@
 1. 监控本机资源使用情况（CPU、内存、GPU）
 2. 每分钟上报数据到中转机
 3. 接收并执行限制指令
+4. 上报携带 `report_id` 幂等字段，控制器可去重避免重复扣费
 
 **核心代码结构：**
 ```go
@@ -261,6 +284,13 @@ func decideAction(username string, balance float64, userData UserProcess) *Actio
     return nil
 }
 ```
+
+**CPU 计费补充（核分钟，单价更低）：**
+- 计费按“核分钟”计算：`cpu_percent/100 * cpu_price_per_core_minute * (interval_seconds/60)`
+- 单价来源：
+  - 优先从 `resource_prices` 表读取模型 `CPU_CORE`
+  - 否则使用配置 `cpu_price_per_core_minute` 兜底
+- CPU 控制（限流）与余额状态联动：`limited/blocked` 状态下下发 `set_cpu_quota`
 
 ### 4.4 用户侧拦截脚本（Bash Hook）
 
@@ -835,6 +865,14 @@ func (a *NodeAgent) blockUserGPUAccess(username string, reason string) error {
 }
 ```
 
+**CPU 限流（余额联动，兼容 cgroup v1/v2）：**
+- action：`set_cpu_quota`，字段 `cpu_quota_percent`（0 表示解除限制）
+- 兜底顺序：
+  1) systemd：`systemctl set-property --runtime user-<uid>.slice CPUQuota=...`
+  2) cgroup v2：写 `cpu.max`（并尝试写 `cgroup.procs` 迁移该用户进程）
+  3) cgroup v1：写 `cpu.cfs_period_us/cpu.cfs_quota_us`（并把用户进程 PID 写入 `tasks`）
+- 要求：Agent 以 root 运行（写 cgroup 与迁移进程需要权限）
+
 ### 7.5 异构GPU支持
 
 **价格配置（数据库）：**
@@ -929,6 +967,8 @@ func (c *Controller) ReceiveMetrics(ctx *gin.Context) {
 - `node-agent/metrics.go` - 指标收集
 - `node-agent/gpu.go` - GPU监控
 - `node-agent/action.go` - 限制指令执行
+- `node-agent/cpu_quota.go` - CPU 限流（systemd / cgroup v2 / cgroup v1）
+- `node-agent/report.go` - 上报与本地补报（jsonl）
 - `node-agent/go.mod` - Go模块依赖
 
 ### 8.2 控制器代码
@@ -946,6 +986,7 @@ func (c *Controller) ReceiveMetrics(ctx *gin.Context) {
 
 ### 8.4 部署脚本
 - `scripts/deploy_agent.sh` - 批量部署Agent
+- `scripts/deploy_controller.sh` - 部署控制器（示例）
 - `scripts/deploy_hook.sh` - 部署bash hook
 - `scripts/check_status.sh` - 检查系统状态
 
@@ -955,14 +996,13 @@ func (c *Controller) ReceiveMetrics(ctx *gin.Context) {
 - `tools/balance-query` - 余额查询工具
 
 ### 8.6 Web界面
-- `web/src/` - Vue.js源代码
-- `web/dist/` - 编译后的静态文件
-- `web/package.json` - npm依赖
+- `web/dist/` - 最小可用静态管理页（无需构建，控制器直接服务）
 
 ### 8.7 配置文件
 - `config/controller.yaml` - 控制器配置
-- `config/prices.yaml` - GPU价格配置
+- `database/init_data.sql` - 默认价格（含 `CPU_CORE`）
 - `systemd/gpu-node-agent.service` - systemd服务文件
+- `systemd/gpu-controller.service` - 控制器 systemd 服务文件
 
 ---
 
@@ -988,6 +1028,7 @@ func (c *Controller) ReceiveMetrics(ctx *gin.Context) {
 - 初期设置"试运行模式"（记录但不扣费）
 - 提供详细的费用明细查询
 - 设置申诉机制，管理员可手动调整
+- 上报幂等：使用 `report_id` + `metric_reports` 去重，避免网络重试导致重复扣费
 
 ### 9.4 用户抵触风险
 **风险：** 用户不习惯新系统，影响工作

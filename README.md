@@ -40,6 +40,9 @@ go run . --config ../config/controller.yaml
 curl -s http://127.0.0.1:8000/healthz
 ```
 
+Web 管理页（最小可用）：
+- 浏览器打开 `http://127.0.0.1:8000/`（需要手动填管理员 token 才能调用管理员接口）
+
 ### 3) 启动节点 Agent（同机模拟）
 
 ```bash
@@ -50,16 +53,37 @@ NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-to
 
 说明：
 - 没有 NVIDIA 驱动或没有 `nvidia-smi` 时，Agent 会优雅降级为只心跳上报（不报 GPU 进程）。
+- CPU 控制优先使用 `systemd CPUQuota`；否则按 `cgroup v2` 再到 `cgroup v1(cpu.cfs_*)` 兜底。
+- 为防止网络重试导致重复扣费，Agent 每次上报携带 `report_id`，控制器做幂等去重。
 
 ## API 速查
 
 - `POST /api/metrics`（Agent 上报；需要 `X-Agent-Token`）
 - `GET /api/users/:username/balance`（余额查询；用于 Hook）
+- `GET /api/users/:username/usage`（用户使用记录）
 - `POST /api/users/:username/recharge`（充值；需要 `Authorization: Bearer <adminToken>`）
 - `GET /api/admin/users`（管理员查询；需要管理员 token）
 - `POST /api/admin/prices`（设置 GPU 单价；需要管理员 token）
+- `GET /api/admin/usage`（管理员查询使用记录）
+- `GET /api/admin/gpu/queue`（管理员查看排队）
 
 更完整的字段说明见：`docs/api-reference.md`。
+
+## 文档
+
+- `doc/plan.md`：总体方案与实现对照
+- `docs/api-reference.md`：API 参考
+- `docs/user-guide.md`：用户指南
+- `docs/admin-guide.md`：管理员指南
+- `docs/go-live-checklist.md`：上线检查清单
+
+## 测试说明
+
+本仓库为多 Go module（`controller/`、`node-agent/`），请在仓库根目录按如下方式运行测试：
+
+```bash
+go test ./controller/... ./node-agent/...
+```
 
 ## 目录结构
 

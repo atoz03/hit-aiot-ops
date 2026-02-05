@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ func (s *Server) Router() *gin.Engine {
 	api.POST("/metrics", s.authAgent(), s.handleMetrics)
 
 	api.GET("/users/:username/balance", s.handleBalance)
+	api.GET("/users/:username/usage", s.handleUserUsage)
 	api.POST("/users/:username/recharge", s.authAdmin(), s.handleRecharge)
 
 	// 排队接口（可选）：当前实现为“纯排队/不分配”的可运行版本，便于后续接入真实资源分配策略
@@ -45,6 +47,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/prices", s.handleAdminPrices)
 	admin.POST("/prices", s.handleAdminSetPrice)
 	admin.GET("/gpu/queue", s.handleAdminGPUQueue)
+	admin.GET("/usage", s.handleAdminUsage)
 
 	s.maybeServeWeb(r)
 	return r
@@ -96,6 +99,27 @@ func (s *Server) handleBalance(c *gin.Context) {
 		"balance":  u.Balance,
 		"status":   u.Status,
 	})
+}
+
+func (s *Server) handleUserUsage(c *gin.Context) {
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username 不能为空"})
+		return
+	}
+	limit := 200
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+
+	records, err := s.store.ListUsageByUser(c.Request.Context(), username, limit)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"records": records})
 }
 
 type rechargeReq struct {
@@ -172,6 +196,22 @@ func (s *Server) handleAdminSetPrice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (s *Server) handleAdminUsage(c *gin.Context) {
+	username := strings.TrimSpace(c.Query("username"))
+	limit := 200
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	records, err := s.store.ListUsageAdmin(c.Request.Context(), username, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"records": records})
+}
+
 func (s *Server) handleMetrics(c *gin.Context) {
 	var data MetricsData
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -181,6 +221,11 @@ func (s *Server) handleMetrics(c *gin.Context) {
 	data.NodeID = strings.TrimSpace(data.NodeID)
 	if data.NodeID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id 不能为空"})
+		return
+	}
+	data.ReportID = strings.TrimSpace(data.ReportID)
+	if data.ReportID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "report_id 不能为空（用于幂等防重）"})
 		return
 	}
 
@@ -271,8 +316,18 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 	userAgg := make(map[string]*agg)
 
 	var actions []Action
+	duplicate := false
 
 	err := s.store.WithTx(ctx, func(tx *sql.Tx) error {
+		inserted, err := s.store.TryInsertReportTx(ctx, tx, data.ReportID, data.NodeID, reportTS, intervalSeconds)
+		if err != nil {
+			return err
+		}
+		if !inserted {
+			duplicate = true
+			return nil
+		}
+
 		priceRows, err := s.store.LoadPricesTx(ctx, tx)
 		if err != nil {
 			return err
@@ -341,7 +396,13 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 		}
 		return nil
 	})
-	return actions, err
+	if err != nil {
+		return nil, err
+	}
+	if duplicate {
+		return []Action{}, nil
+	}
+	return actions, nil
 }
 
 func round4(v float64) float64 {

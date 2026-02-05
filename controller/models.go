@@ -6,6 +6,8 @@ import "time"
 type MetricsData struct {
 	NodeID    string `json:"node_id"`
 	Timestamp string `json:"timestamp"` // RFC3339
+	// ReportID 为单次上报的全局唯一 ID，用于幂等：控制器只处理一次，避免重试导致重复扣费。
+	ReportID string `json:"report_id"`
 	// IntervalSeconds 为 Agent 上报周期（秒）。为空时由控制器用 sample_interval_seconds 兜底。
 	IntervalSeconds int           `json:"interval_seconds,omitempty"`
 	Users           []UserProcess `json:"users"`
@@ -50,4 +52,14 @@ type User struct {
 type PriceRow struct {
 	Model string
 	Price float64
+}
+
+type UsageRecord struct {
+	NodeID     string    `json:"node_id"`
+	Username   string    `json:"username"`
+	Timestamp  time.Time `json:"timestamp"`
+	CPUPercent float64   `json:"cpu_percent"`
+	MemoryMB   float64   `json:"memory_mb"`
+	GPUUsage   string    `json:"gpu_usage"` // JSON 字符串（原样返回）
+	Cost       float64   `json:"cost"`
 }

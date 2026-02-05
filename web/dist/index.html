@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GPU/CPU 集群管理</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif; margin: 0; background: #0b1020; color: #e9ecf1; }
+      header { padding: 16px 20px; background: #101a33; border-bottom: 1px solid #1f2a4a; }
+      header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+      main { padding: 16px 20px; max-width: 1100px; margin: 0 auto; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .card { background: #0f1830; border: 1px solid #1f2a4a; border-radius: 10px; padding: 14px; flex: 1; min-width: 320px; }
+      .card h2 { margin: 0 0 10px; font-size: 14px; }
+      label { display: block; font-size: 12px; color: #b9c0cf; margin: 10px 0 6px; }
+      input, textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a3b66; background: #0b1020; color: #e9ecf1; }
+      button { padding: 9px 12px; border-radius: 8px; border: 1px solid #2a3b66; background: #1b2b55; color: #e9ecf1; cursor: pointer; }
+      button:hover { background: #223768; }
+      pre { background: #0b1020; border: 1px solid #1f2a4a; border-radius: 8px; padding: 10px; overflow: auto; max-height: 320px; }
+      .muted { color: #b9c0cf; font-size: 12px; }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #2a3b66; font-size: 12px; }
+      .ok { color: #c7f5d3; border-color: #2e7d4a; }
+      .warn { color: #ffe4b8; border-color: #8a6d1f; }
+      .bad { color: #ffbdbd; border-color: #7a2f2f; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GPU/CPU 集群管理（最小可用 Web 管理页）</h1>
+    </header>
+    <main>
+      <div class="card">
+        <h2>连接配置</h2>
+        <div class="row">
+          <div style="flex: 2; min-width: 320px;">
+            <label>控制器地址（例如 http://127.0.0.1:8000）</label>
+            <input id="baseUrl" value="" placeholder="http://127.0.0.1:8000" />
+          </div>
+          <div style="flex: 2; min-width: 320px;">
+            <label>管理员 Token（Authorization: Bearer ...）</label>
+            <input id="adminToken" value="" placeholder="dev-admin-token" />
+          </div>
+          <div style="display:flex; align-items:end;">
+            <button id="btnHealth">健康检查</button>
+          </div>
+        </div>
+        <div class="muted" id="healthText">未检查</div>
+      </div>
+
+      <div class="grid" style="margin-top:12px;">
+        <div class="card">
+          <h2>用户余额/使用记录</h2>
+          <label>用户名</label>
+          <input id="username" value="" placeholder="alice" />
+          <div class="row" style="margin-top:10px;">
+            <button id="btnBalance">查询余额</button>
+            <button id="btnUsage">查询使用记录</button>
+          </div>
+          <pre id="userOut"></pre>
+        </div>
+
+        <div class="card">
+          <h2>管理员：用户/价格/充值</h2>
+          <div class="row">
+            <button id="btnAdminUsers">用户列表</button>
+            <button id="btnAdminPrices">价格列表</button>
+            <button id="btnAdminQueue">排队队列</button>
+            <button id="btnAdminUsage">全局使用记录</button>
+          </div>
+
+          <label>充值（需要管理员 Token）</label>
+          <div class="row">
+            <input id="rechargeUser" placeholder="alice" />
+            <input id="rechargeAmount" placeholder="100" />
+            <input id="rechargeMethod" placeholder="admin" value="admin" />
+            <button id="btnRecharge">充值</button>
+          </div>
+
+          <label>设置单价（需要管理员 Token；CPU 使用模型名 CPU_CORE）</label>
+          <div class="row">
+            <input id="priceModel" placeholder="RTX 3090 / A100 / CPU_CORE" />
+            <input id="priceValue" placeholder="0.2" />
+            <button id="btnSetPrice">设置</button>
+          </div>
+          <pre id="adminOut"></pre>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      function baseUrl() {
+        const v = $("baseUrl").value.trim();
+        return v ? v.replace(/\/+$/, "") : location.origin;
+      }
+      function adminHeader() {
+        const t = $("adminToken").value.trim();
+        return t ? { "Authorization": "Bearer " + t } : {};
+      }
+
+      async function apiGet(path, headers = {}) {
+        const res = await fetch(baseUrl() + path, { headers });
+        const text = await res.text();
+        if (!res.ok) throw new Error("HTTP " + res.status + ": " + text);
+        try { return JSON.parse(text); } catch { return text; }
+      }
+      async function apiPost(path, body, headers = {}) {
+        const res = await fetch(baseUrl() + path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        if (!res.ok) throw new Error("HTTP " + res.status + ": " + text);
+        try { return JSON.parse(text); } catch { return text; }
+      }
+
+      function statusPill(status) {
+        const cls = status === "normal" ? "ok" : status === "warning" ? "warn" : "bad";
+        return `<span class="pill ${cls}">${status}</span>`;
+      }
+
+      $("btnHealth").onclick = async () => {
+        $("healthText").textContent = "检查中...";
+        try {
+          const r = await apiGet("/healthz");
+          $("healthText").innerHTML = `健康：${statusPill(r.ok ? "normal" : "blocked")} ` + JSON.stringify(r);
+        } catch (e) {
+          $("healthText").textContent = "失败：" + e.message;
+        }
+      };
+
+      $("btnBalance").onclick = async () => {
+        const u = $("username").value.trim();
+        if (!u) return alert("请输入用户名");
+        $("userOut").textContent = "查询中...";
+        try {
+          const r = await apiGet(`/api/users/${encodeURIComponent(u)}/balance`);
+          $("userOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("userOut").textContent = e.message;
+        }
+      };
+
+      $("btnUsage").onclick = async () => {
+        const u = $("username").value.trim();
+        if (!u) return alert("请输入用户名");
+        $("userOut").textContent = "查询中...";
+        try {
+          const r = await apiGet(`/api/users/${encodeURIComponent(u)}/usage?limit=200`);
+          $("userOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("userOut").textContent = e.message;
+        }
+      };
+
+      $("btnAdminUsers").onclick = async () => {
+        $("adminOut").textContent = "查询中...";
+        try {
+          const r = await apiGet("/api/admin/users", adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
+      $("btnAdminPrices").onclick = async () => {
+        $("adminOut").textContent = "查询中...";
+        try {
+          const r = await apiGet("/api/admin/prices", adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
+      $("btnAdminQueue").onclick = async () => {
+        $("adminOut").textContent = "查询中...";
+        try {
+          const r = await apiGet("/api/admin/gpu/queue", adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
+      $("btnAdminUsage").onclick = async () => {
+        $("adminOut").textContent = "查询中...";
+        try {
+          const r = await apiGet("/api/admin/usage?limit=200", adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
+      $("btnRecharge").onclick = async () => {
+        const u = $("rechargeUser").value.trim();
+        const amount = Number($("rechargeAmount").value.trim());
+        const method = $("rechargeMethod").value.trim() || "admin";
+        if (!u || !amount) return alert("请输入充值用户名与金额");
+        $("adminOut").textContent = "充值中...";
+        try {
+          const r = await apiPost(`/api/users/${encodeURIComponent(u)}/recharge`, { amount, method }, adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
+      $("btnSetPrice").onclick = async () => {
+        const model = $("priceModel").value.trim();
+        const price_per_minute = Number($("priceValue").value.trim());
+        if (!model || !Number.isFinite(price_per_minute)) return alert("请输入模型与单价");
+        $("adminOut").textContent = "设置中...";
+        try {
+          const r = await apiPost("/api/admin/prices", { gpu_model: model, price_per_minute }, adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
+      // 默认填充 baseUrl
+      $("baseUrl").value = location.origin;
+    </script>
+  </body>
+</html>
+

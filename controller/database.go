@@ -169,6 +169,30 @@ ON CONFLICT (username) DO NOTHING`, username, defaultBalance)
 	return s.GetUserTx(ctx, tx, username)
 }
 
+// TryInsertReportTx 尝试写入上报记录（用于幂等）。
+// 返回 inserted=false 表示该 report_id 已处理过，应跳过扣费与落库。
+func (s *Store) TryInsertReportTx(ctx context.Context, tx *sql.Tx, reportID string, nodeID string, ts time.Time, intervalSeconds int) (bool, error) {
+	reportID = strings.TrimSpace(reportID)
+	if reportID == "" {
+		return false, errors.New("report_id 不能为空")
+	}
+	if intervalSeconds <= 0 {
+		intervalSeconds = 60
+	}
+	res, err := tx.ExecContext(ctx, `
+INSERT INTO metric_reports(report_id, node_id, timestamp, interval_seconds)
+VALUES($1,$2,$3,$4)
+ON CONFLICT (report_id) DO NOTHING`, reportID, nodeID, ts, intervalSeconds)
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected == 1, nil
+}
+
 func (s *Store) GetUser(ctx context.Context, username string) (User, error) {
 	var u User
 	err := s.db.QueryRowContext(ctx, `
@@ -308,7 +332,12 @@ VALUES($1, $2, $3)`, username, amount, method); err != nil {
 }
 
 func (s *Store) InsertUsageRecordTx(ctx context.Context, tx *sql.Tx, nodeID string, ts time.Time, proc UserProcess, cost float64) error {
-	gpuJSON, err := json.Marshal(proc.GPUUsage)
+	gpuUsage := proc.GPUUsage
+	if gpuUsage == nil {
+		// 保持 JSONB 非空且语义一致：CPU-only 记录也用空数组而非 null
+		gpuUsage = []GPUUsage{}
+	}
+	gpuJSON, err := json.Marshal(gpuUsage)
 	if err != nil {
 		return err
 	}
@@ -393,6 +422,74 @@ LIMIT $1`, limit)
 			return nil, err
 		}
 		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListUsageByUser(ctx context.Context, username string, limit int) ([]UsageRecord, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, errors.New("username 不能为空")
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT node_id, username, timestamp, cpu_percent, memory_mb, gpu_usage, cost
+FROM usage_records
+WHERE username=$1
+ORDER BY timestamp DESC
+LIMIT $2`, username, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []UsageRecord
+	for rows.Next() {
+		var r UsageRecord
+		if err := rows.Scan(&r.NodeID, &r.Username, &r.Timestamp, &r.CPUPercent, &r.MemoryMB, &r.GPUUsage, &r.Cost); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListUsageAdmin(ctx context.Context, username string, limit int) ([]UsageRecord, error) {
+	username = strings.TrimSpace(username)
+	if limit <= 0 || limit > 5000 {
+		limit = 200
+	}
+
+	var rows *sql.Rows
+	var err error
+	if username == "" {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT node_id, username, timestamp, cpu_percent, memory_mb, gpu_usage, cost
+FROM usage_records
+ORDER BY timestamp DESC
+LIMIT $1`, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT node_id, username, timestamp, cpu_percent, memory_mb, gpu_usage, cost
+FROM usage_records
+WHERE username=$1
+ORDER BY timestamp DESC
+LIMIT $2`, username, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []UsageRecord
+	for rows.Next() {
+		var r UsageRecord
+		if err := rows.Scan(&r.NodeID, &r.Username, &r.Timestamp, &r.CPUPercent, &r.MemoryMB, &r.GPUUsage, &r.Cost); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

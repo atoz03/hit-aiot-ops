@@ -99,6 +99,7 @@ func (a *NodeAgent) tick(ctx context.Context) error {
 		return err
 	}
 	metrics.IntervalSeconds = int(a.interval.Seconds())
+	metrics.ReportID = newReportID()
 
 	reportCtx, cancel2 := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel2()
