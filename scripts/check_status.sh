@@ -19,5 +19,8 @@ curl -fsS -H "Authorization: Bearer ${ADMIN_TOKEN}" "${CONTROLLER_URL}/api/admin
 echo "==> users"
 curl -fsS -H "Authorization: Bearer ${ADMIN_TOKEN}" "${CONTROLLER_URL}/api/admin/users" && echo
 
+echo "==> nodes"
+curl -fsS -H "Authorization: Bearer ${ADMIN_TOKEN}" "${CONTROLLER_URL}/api/admin/nodes?limit=5" && echo
+
 echo "==> usage"
 curl -fsS -H "Authorization: Bearer ${ADMIN_TOKEN}" "${CONTROLLER_URL}/api/admin/usage?limit=5" && echo

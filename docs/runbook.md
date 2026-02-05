@@ -103,6 +103,9 @@ curl -fsS http://<controller-ip>:8000/metrics | head -n 20
 打开 Web 管理页（最小可用）：
 - `http://<controller-ip>:8000/`
 
+节点状态（管理员接口）：
+- `GET /api/admin/nodes`
+
 ## 4. 部署节点 Agent（node-agent）
 
 ### 4.1 在每台计算节点安装二进制
@@ -199,6 +202,9 @@ curl -fsS -H "Authorization: Bearer <admin_token>" \
 管理员：
 - `GET /api/admin/usage?username=alice&limit=200`
 
+导出 CSV（便于对账/计费）：
+- `GET /api/admin/usage/export.csv?username=alice&from=2026-02-01&to=2026-02-05`
+
 ## 8. 常见问题排查
 
 1) Agent 上报 401
@@ -212,4 +218,3 @@ curl -fsS -H "Authorization: Bearer <admin_token>" \
 3) 没有 GPU 记录
 - 节点是否存在 `nvidia-smi`
 - `nvidia-smi --query-compute-apps=pid,gpu_name --format=csv,noheader` 是否有输出
-

@@ -55,3 +55,9 @@ Agent 每次上报携带 `report_id`（随机 128bit），控制器写入 `metri
 - `scripts/deploy_hook.sh`：部署 Hook 到所有用户（示例）
 - `scripts/check_status.sh`：接口自检（示例）
 - `scripts/node_prereq_check.sh`：计算节点前置检查（systemd/cgroup/GPU）
+
+## 7. 上线后常用接口
+
+- 节点在线状态：`GET /api/admin/nodes`
+- 使用记录查询：`GET /api/admin/usage`
+- 使用记录导出：`GET /api/admin/usage/export.csv`

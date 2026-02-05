@@ -128,3 +128,20 @@
 参数：
 - `username`：可选，按用户过滤
 - `limit`：返回条数（默认 200，最大 5000）
+
+### `GET /api/admin/usage/export.csv`（管理员）
+
+参数：
+- `username`：可选
+- `from`：可选（RFC3339 或 YYYY-MM-DD）
+- `to`：可选（RFC3339 或 YYYY-MM-DD）
+- `limit`：可选（默认 20000，最大 200000）
+
+返回：CSV 文件（列：timestamp,node_id,username,cpu_percent,memory_mb,cost,gpu_usage_json）。
+
+### `GET /api/admin/nodes`（管理员）
+
+参数：
+- `limit`：可选（默认 200，最大 2000）
+
+返回：节点上报状态（last_seen、gpu/cpu 进程数、当次上报成本等）。

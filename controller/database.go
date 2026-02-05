@@ -493,3 +493,128 @@ LIMIT $2`, username, limit)
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) UpsertNodeStatusTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	nodeID string,
+	lastSeenAt time.Time,
+	reportID string,
+	reportTS time.Time,
+	intervalSeconds int,
+	gpuProcCount int,
+	cpuProcCount int,
+	usageRecordsCount int,
+	costTotal float64,
+) error {
+	nodeID = strings.TrimSpace(nodeID)
+	reportID = strings.TrimSpace(reportID)
+	if nodeID == "" || reportID == "" {
+		return errors.New("node_id/report_id 不能为空")
+	}
+	if intervalSeconds <= 0 {
+		intervalSeconds = 60
+	}
+
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO nodes(
+  node_id, last_seen_at, last_report_id, last_report_ts, interval_seconds,
+  gpu_process_count, cpu_process_count, usage_records_count, cost_total, updated_at
+)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+ON CONFLICT (node_id) DO UPDATE SET
+  last_seen_at=EXCLUDED.last_seen_at,
+  last_report_id=EXCLUDED.last_report_id,
+  last_report_ts=EXCLUDED.last_report_ts,
+  interval_seconds=EXCLUDED.interval_seconds,
+  gpu_process_count=EXCLUDED.gpu_process_count,
+  cpu_process_count=EXCLUDED.cpu_process_count,
+  usage_records_count=EXCLUDED.usage_records_count,
+  cost_total=EXCLUDED.cost_total,
+  updated_at=NOW()
+`, nodeID, lastSeenAt, reportID, reportTS, intervalSeconds, gpuProcCount, cpuProcCount, usageRecordsCount, costTotal)
+	return err
+}
+
+func (s *Store) ListNodes(ctx context.Context, limit int) ([]NodeStatus, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT node_id, last_seen_at, last_report_id, last_report_ts, interval_seconds,
+       gpu_process_count, cpu_process_count, usage_records_count, cost_total, updated_at
+FROM nodes
+ORDER BY last_seen_at DESC
+LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []NodeStatus
+	for rows.Next() {
+		var n NodeStatus
+		if err := rows.Scan(
+			&n.NodeID,
+			&n.LastSeenAt,
+			&n.LastReportID,
+			&n.LastReportTS,
+			&n.IntervalSeconds,
+			&n.GPUProcessCount,
+			&n.CPUProcessCount,
+			&n.UsageRecordsCount,
+			&n.CostTotal,
+			&n.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) queryUsageRows(
+	ctx context.Context,
+	username string,
+	hasFrom bool,
+	from time.Time,
+	hasTo bool,
+	to time.Time,
+	limit int,
+) (*sql.Rows, error) {
+	if limit <= 0 || limit > 200000 {
+		limit = 20000
+	}
+
+	conds := []string{}
+	args := []any{}
+	argN := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	if strings.TrimSpace(username) != "" {
+		conds = append(conds, "username="+argN(username))
+	}
+	if hasFrom {
+		conds = append(conds, "timestamp>="+argN(from))
+	}
+	if hasTo {
+		conds = append(conds, "timestamp<="+argN(to))
+	}
+
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
+
+	query := fmt.Sprintf(`
+SELECT node_id, username, timestamp, cpu_percent, memory_mb, gpu_usage::text, cost
+FROM usage_records
+%s
+ORDER BY timestamp ASC
+LIMIT %s
+`, where, argN(limit))
+
+	return s.db.QueryContext(ctx, query, args...)
+}

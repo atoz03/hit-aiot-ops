@@ -11,7 +11,9 @@
 4. CPU 控制三段兜底：优先 `systemd CPUQuota`，其次 `cgroup v2 cpu.max`，最后 `cgroup v1 cpu.cfs_*`（兼容无法升级到 cgroup v2 的机器）
 5. Bash Hook：在用户启动“疑似 GPU 任务”前检查余额状态（尽量不误伤）
 6. 最小可用 Web 管理页：控制器直接提供静态页（无需前端构建）用于查看余额/用户/价格/使用记录/排队队列
-7. 数据库迁移脚本：`database/migrations/`（含幂等表）
+7. 节点状态：控制器落库 nodes 表，可通过管理员接口查看节点在线/上报情况
+8. 使用记录 CSV 导出：管理员接口支持导出 CSV 便于对账与计费归档
+9. 数据库迁移脚本：`database/migrations/`（含幂等表与 nodes 表）
 
 落地操作手册：
 - `docs/runbook.md`（一步步上线运行手册）

@@ -63,3 +63,16 @@ type UsageRecord struct {
 	GPUUsage   string    `json:"gpu_usage"` // JSON 字符串（原样返回）
 	Cost       float64   `json:"cost"`
 }
+
+type NodeStatus struct {
+	NodeID            string    `json:"node_id"`
+	LastSeenAt        time.Time `json:"last_seen_at"`
+	LastReportID      string    `json:"last_report_id"`
+	LastReportTS      time.Time `json:"last_report_ts"`
+	IntervalSeconds   int       `json:"interval_seconds"`
+	GPUProcessCount   int       `json:"gpu_process_count"`
+	CPUProcessCount   int       `json:"cpu_process_count"`
+	UsageRecordsCount int       `json:"usage_records_count"`
+	CostTotal         float64   `json:"cost_total"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}

@@ -34,6 +34,7 @@
 1) 控制器健康检查
 - `GET /healthz` 返回 `{"ok":true}`
 - `GET /metrics` 有输出（便于上线后观测）
+- `GET /api/admin/nodes` 可看到节点上报（上线后用于判断离线节点）
 
 2) Agent 上报与幂等
 - 观察控制器日志与数据库 `metric_reports` 行数增长

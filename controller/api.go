@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,6 +55,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/prices", s.handleAdminSetPrice)
 	admin.GET("/gpu/queue", s.handleAdminGPUQueue)
 	admin.GET("/usage", s.handleAdminUsage)
+	admin.GET("/nodes", s.handleAdminNodes)
+	admin.GET("/usage/export.csv", s.handleAdminUsageExportCSV)
 
 	s.maybeServeWeb(r)
 	return r
@@ -217,6 +221,90 @@ func (s *Server) handleAdminUsage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"records": records})
 }
 
+func (s *Server) handleAdminNodes(c *gin.Context) {
+	limit := 200
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	nodes, err := s.store.ListNodes(c.Request.Context(), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"nodes": nodes})
+}
+
+func (s *Server) handleAdminUsageExportCSV(c *gin.Context) {
+	username := strings.TrimSpace(c.Query("username"))
+	fromStr := strings.TrimSpace(c.Query("from"))
+	toStr := strings.TrimSpace(c.Query("to"))
+	limit := 20000
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	if limit <= 0 || limit > 200000 {
+		limit = 20000
+	}
+
+	var from time.Time
+	var to time.Time
+	var err error
+	if fromStr != "" {
+		from, err = parseTimeFlexible(fromStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "from 时间格式不合法，建议 RFC3339 或 YYYY-MM-DD"})
+			return
+		}
+	}
+	if toStr != "" {
+		to, err = parseTimeFlexible(toStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "to 时间格式不合法，建议 RFC3339 或 YYYY-MM-DD"})
+			return
+		}
+	}
+
+	ctx := c.Request.Context()
+	rows, err := s.store.queryUsageRows(ctx, username, fromStr != "", from, toStr != "", to, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	filename := "usage_export.csv"
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+
+	w := csv.NewWriter(c.Writer)
+	_ = w.Write([]string{"timestamp", "node_id", "username", "cpu_percent", "memory_mb", "cost", "gpu_usage_json"})
+
+	for rows.Next() {
+		var nodeID, user string
+		var ts time.Time
+		var cpuPercent, memoryMB, cost float64
+		var gpuUsage string
+		if err := rows.Scan(&nodeID, &user, &ts, &cpuPercent, &memoryMB, &gpuUsage, &cost); err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		_ = w.Write([]string{
+			ts.Format(time.RFC3339),
+			nodeID,
+			user,
+			fmt.Sprintf("%.4f", cpuPercent),
+			fmt.Sprintf("%.4f", memoryMB),
+			fmt.Sprintf("%.4f", cost),
+			gpuUsage,
+		})
+	}
+	w.Flush()
+}
+
 func (s *Server) handleMetrics(c *gin.Context) {
 	var data MetricsData
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -320,6 +408,9 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 	}
 	userAgg := make(map[string]*agg)
 	usageRecords := 0
+	gpuProcCount := 0
+	cpuProcCount := 0
+	costTotal := 0.0
 
 	var actions []Action
 	duplicate := false
@@ -360,6 +451,12 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 				return err
 			}
 			usageRecords++
+			costTotal += cost
+			if len(proc.GPUUsage) > 0 {
+				gpuProcCount++
+			} else {
+				cpuProcCount++
+			}
 
 			a := userAgg[proc.Username]
 			if a == nil {
@@ -401,6 +498,23 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 				}
 			}
 		}
+
+		// 更新节点状态（用于运维查看在线/上报情况）
+		if err := s.store.UpsertNodeStatusTx(
+			ctx,
+			tx,
+			data.NodeID,
+			now,
+			data.ReportID,
+			reportTS,
+			intervalSeconds,
+			gpuProcCount,
+			cpuProcCount,
+			usageRecords,
+			round4(costTotal),
+		); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -417,6 +531,26 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 func round4(v float64) float64 {
 	// 避免引入更多依赖，使用 billing.go 同样的舍入策略
 	return float64(int64(v*10000+0.5)) / 10000
+}
+
+func parseTimeFlexible(v string) (time.Time, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}, fmt.Errorf("empty")
+	}
+	// RFC3339
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
+	}
+	// YYYY-MM-DD（按 UTC 00:00:00）
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		return t, nil
+	}
+	// 兼容常见：YYYY-MM-DD HH:MM:SS（按本地时间）
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05", v, time.Local); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("invalid time: %s", v)
 }
 
 func (s *Server) maybeServeWeb(r *gin.Engine) {

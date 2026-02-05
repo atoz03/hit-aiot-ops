@@ -66,8 +66,10 @@
           <div class="row">
             <button id="btnAdminUsers">用户列表</button>
             <button id="btnAdminPrices">价格列表</button>
+            <button id="btnAdminNodes">节点状态</button>
             <button id="btnAdminQueue">排队队列</button>
             <button id="btnAdminUsage">全局使用记录</button>
+            <button id="btnAdminExport">导出CSV</button>
           </div>
 
           <label>充值（需要管理员 Token）</label>
@@ -187,6 +189,16 @@
         }
       };
 
+      $("btnAdminNodes").onclick = async () => {
+        $("adminOut").textContent = "查询中...";
+        try {
+          const r = await apiGet("/api/admin/nodes?limit=200", adminHeader());
+          $("adminOut").textContent = JSON.stringify(r, null, 2);
+        } catch (e) {
+          $("adminOut").textContent = e.message;
+        }
+      };
+
       $("btnAdminUsage").onclick = async () => {
         $("adminOut").textContent = "查询中...";
         try {
@@ -195,6 +207,16 @@
         } catch (e) {
           $("adminOut").textContent = e.message;
         }
+      };
+
+      $("btnAdminExport").onclick = async () => {
+        const u = $("username").value.trim();
+        const url = baseUrl() + "/api/admin/usage/export.csv?limit=20000" + (u ? ("&username=" + encodeURIComponent(u)) : "");
+        // 直接打开下载（浏览器会携带 cookie；此处用 Authorization header 下载会麻烦，因此建议在输入框里复制 curl）
+        $("adminOut").textContent =
+          "CSV 导出需要管理员鉴权（Authorization: Bearer ...）。\n" +
+          "建议用 curl：\n\n" +
+          `curl -fsS -H "Authorization: Bearer ${$("adminToken").value.trim()}" "${url}" -o usage_export.csv\n`;
       };
 
       $("btnRecharge").onclick = async () => {
@@ -229,4 +251,3 @@
     </script>
   </body>
 </html>
-

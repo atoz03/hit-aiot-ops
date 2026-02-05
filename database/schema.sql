@@ -51,6 +51,20 @@ CREATE TABLE IF NOT EXISTS metric_reports (
     received_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- 节点状态表：用于运维查看在线/上报情况
+CREATE TABLE IF NOT EXISTS nodes (
+    node_id VARCHAR(50) PRIMARY KEY,
+    last_seen_at TIMESTAMP NOT NULL,
+    last_report_id TEXT NOT NULL,
+    last_report_ts TIMESTAMP NOT NULL,
+    interval_seconds INT NOT NULL,
+    gpu_process_count INT NOT NULL DEFAULT 0,
+    cpu_process_count INT NOT NULL DEFAULT 0,
+    usage_records_count INT NOT NULL DEFAULT 0,
+    cost_total DECIMAL(12,4) NOT NULL DEFAULT 0.0,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_username ON usage_records(username);
 CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_records(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_node ON usage_records(node_id);
