@@ -63,7 +63,20 @@ scripts/build_linux.sh
 - `bin/controller`
 - `bin/node-agent`
 
-### 3.2 准备控制器配置
+### 3.2 构建前端（Vue3，可选但推荐）
+
+控制器会自动托管 `web/dist/`。若你希望上线完整前端，请在构建机执行：
+
+```bash
+cd web
+pnpm install
+pnpm build
+```
+
+然后把 `web/dist/` 同步到控制节点（例如 `/opt/gpu-controller/web/dist`），并在控制器配置中设置：
+- `web_dir: "/opt/gpu-controller/web/dist"`
+
+### 3.3 准备控制器配置
 
 拷贝 `config/controller.yaml` 为生产配置（建议放在控制节点）：
 
@@ -77,7 +90,7 @@ cp config/controller.yaml /opt/gpu-controller/controller.yaml
 - `agent_token`、`admin_token`：替换为强随机值
 - `dry_run`：建议先设置 `true` 试运行 1-3 天
 
-### 3.3 安装并启动 systemd 服务
+### 3.4 安装并启动 systemd 服务
 
 在控制节点：
 
@@ -93,7 +106,7 @@ systemctl enable gpu-controller
 systemctl restart gpu-controller
 ```
 
-### 3.4 验证控制器
+### 3.5 验证控制器
 
 ```bash
 curl -fsS http://<controller-ip>:8000/healthz

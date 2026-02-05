@@ -61,3 +61,15 @@ Agent 每次上报携带 `report_id`（随机 128bit），控制器写入 `metri
 - 节点在线状态：`GET /api/admin/nodes`
 - 使用记录查询：`GET /api/admin/usage`
 - 使用记录导出：`GET /api/admin/usage/export.csv`
+
+## 8. 前端构建（Vue3）
+
+前端在 `web/`，使用 `pnpm`：
+
+```bash
+cd web
+pnpm install
+pnpm build
+```
+
+构建产物在 `web/dist/`，可由控制器托管（配置 `web_dir`）。

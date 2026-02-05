@@ -96,6 +96,18 @@ go test ./controller/... ./node-agent/...
 - 部署 Agent：`scripts/deploy_agent.sh`（示例）
 - 部署 Hook：`scripts/deploy_hook.sh`（示例）
 
+## 前端开发（Vue3）
+
+前端位于 `web/`，使用 `pnpm` 管理依赖：
+
+```bash
+cd web
+pnpm install
+pnpm dev
+```
+
+构建产物输出到 `web/dist/`，控制器会自动托管（访问 `http://<controller>/`）。
+
 ## 目录结构
 
 与 `doc/plan.md` 保持一致（核心实现已落地）：

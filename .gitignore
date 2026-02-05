@@ -11,3 +11,9 @@
 
 # IDE
 .idea/
+
+# Web
+web/node_modules/
+web/.vite/
+web/.env
+web/.env.*
