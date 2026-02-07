@@ -3,7 +3,7 @@
     <template #header>
       <div class="row">
         <div>
-          <div class="title">用户余额</div>
+          <div class="title">积分查询</div>
           <div class="sub">接口：GET /api/users/:username/balance</div>
         </div>
         <el-button :loading="loading" type="primary" @click="query">查询</el-button>
@@ -21,7 +21,7 @@
 
       <el-descriptions v-if="resp" :column="2" border>
         <el-descriptions-item label="用户名">{{ resp.username }}</el-descriptions-item>
-        <el-descriptions-item label="余额">{{ resp.balance }}</el-descriptions-item>
+        <el-descriptions-item label="积分">{{ resp.balance }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="tagType(resp.status)">{{ resp.status }}</el-tag>
         </el-descriptions-item>

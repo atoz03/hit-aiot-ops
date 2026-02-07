@@ -77,6 +77,19 @@ Agent 每次上报携带 `report_id`（随机 128bit），控制器写入 `metri
 - 使用记录查询：`GET /api/admin/usage`
 - 使用记录导出：`GET /api/admin/usage/export.csv`
 
+## 7.1 用户注册/开号审核（新增）
+
+用户自助在 Web「用户注册」页面提交：
+- 账号绑定登记（bind）：把 `(node_id, local_username)` 绑定到 `billing_username`，用于扣费映射与 SSH 校验
+- 开号申请（open）：仅用于记录与流程（不自动创建系统账号）
+
+管理员处理方式（二选一）：
+1) Web 管理端：`管理功能 -> 注册审核`
+2) API：
+   - 查看：`GET /api/admin/requests?status=pending`
+   - 通过：`POST /api/admin/requests/:id/approve`
+   - 拒绝：`POST /api/admin/requests/:id/reject`
+
 ## 8. 前端构建（Vue3）
 
 前端在 `web/`，使用 `pnpm`：
@@ -88,3 +101,28 @@ pnpm build
 ```
 
 构建产物在 `web/dist/`，可由控制器托管（配置 `web_dir`）。
+
+## 9. 计算节点：未登记禁止 SSH 登录（可选，强管控）
+
+本仓库示例脚本 `scripts/deploy_agent.sh` 支持可选安装 SSH 登录拦截：
+- 规则：若本地用户名未在控制器登记通过（`user_node_accounts`），则禁止 SSH 登录
+- 例外：可配置排除用户（默认 `root baojh xqt`）
+
+推荐部署方式：
+
+1) 先确保节点 Agent 上报的 `NODE_ID` 是机器编号（推荐用端口号，例如 `60000`）
+2) 启用 SSH Guard 并按“机器编号:IP”方式传入节点列表：
+
+```bash
+export CONTROLLER_URL="http://controller:8000"
+export AGENT_TOKEN="dev-agent-token"
+export NODES="60000:192.168.1.104 60001:192.168.1.220"
+export ENABLE_SSH_GUARD=1
+export SSH_GUARD_EXCLUDE_USERS="root baojh xqt"
+export SSH_GUARD_FAIL_OPEN=1   # 控制器不可达时是否放行（1=放行；0=拒绝）
+bash scripts/deploy_agent.sh
+```
+
+注意：
+- 节点需要 `curl`（同步 allowlist）；且系统启用 PAM（`/etc/pam.d/sshd` 存在，且支持 `pam_exec.so`）。
+- 这是高风险变更，建议先在 1-2 台节点试点验证再全量推开。

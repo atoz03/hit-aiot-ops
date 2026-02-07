@@ -7,7 +7,7 @@
 - Agent 上报：`X-Agent-Token: <token>`
 - 管理员接口：`Authorization: Bearer <adminToken>`
 - Web 登录：`POST /api/auth/login` 后由控制器下发 HttpOnly cookie（同站点请求自动携带）
-- 用户余额查询：默认不鉴权（用于 Bash Hook）；部署到生产前建议放到内网并增加网关/ACL
+- 用户积分/余额查询：默认不鉴权（用于 Bash Hook）；部署到生产前建议放到内网并增加网关/ACL
 
 CSRF 说明（Web 登录场景）：
 - 通过 cookie 会话访问管理员接口时，非 GET 请求需要携带 `X-CSRF-Token`（从 `GET /api/auth/me` 返回的 `csrf_token` 获取）
@@ -72,7 +72,7 @@ CSRF 说明（Web 登录场景）：
 
 ```json
 {
-  "node_id": "node01",
+  "node_id": "60000",
   "timestamp": "2026-02-05T16:00:00Z",
   "report_id": "2f6c7b3b3c3b4a8b8f1c5c3c1b2a9d10",
   "interval_seconds": 60,
@@ -101,6 +101,10 @@ CSRF 说明（Web 登录场景）：
 }
 ```
 
+说明：
+- `node_id` 约定为**机器编号**（推荐直接使用 SSH 端口号，例如 `60000`），用于把“节点本地账号”映射到“计费账号”进行扣费与限制。
+- 当存在节点账号绑定（见下文）时：控制器会把 `(node_id, local_username)` 映射到 `billing_username` 进行扣费；但下发动作（block/kill/cpu_quota）仍会针对本地用户名，保证 Agent 能生效。
+
 ## 用户接口
 
 ### `GET /api/users/:username/balance`
@@ -119,7 +123,7 @@ CSRF 说明（Web 登录场景）：
 返回：
 
 ```json
-{"records":[{"node_id":"node01","username":"alice","timestamp":"2026-02-05T16:00:00Z","cpu_percent":120.5,"memory_mb":2048,"gpu_usage":"[]","cost":0.6}]}
+{"records":[{"node_id":"60000","username":"alice","timestamp":"2026-02-05T16:00:00Z","cpu_percent":120.5,"memory_mb":2048,"gpu_usage":"[]","cost":0.6}]}
 ```
 
 ### `POST /api/users/:username/recharge`（管理员）
@@ -186,3 +190,71 @@ CSRF 说明（Web 登录场景）：
 - `limit`：可选（默认 200，最大 2000）
 
 返回：节点上报状态（last_seen、gpu/cpu 进程数、当次上报成本等）。
+
+## 用户注册 / 账号绑定 / 开号申请
+
+### `POST /api/requests/bind`（用户自助：绑定登记，需审核）
+
+用途：用户登记“我在某台机器(node_id)上的本地用户名(local_username)”，并关联到“计费账号(billing_username)”。
+
+请求：
+```json
+{
+  "billing_username":"alice",
+  "items":[
+    {"node_id":"60000","local_username":"alice"},
+    {"node_id":"60005","local_username":"alice2"}
+  ],
+  "message":"可选备注"
+}
+```
+
+返回：
+```json
+{"ok":true,"request_ids":[1,2]}
+```
+
+### `POST /api/requests/open`（用户自助：开号申请，需审核）
+
+请求：
+```json
+{"billing_username":"alice","node_id":"60000","local_username":"alice","message":"可选备注"}
+```
+
+返回：
+```json
+{"ok":true,"request_id":3}
+```
+
+### `GET /api/requests?billing_username=...`（用户自助：查看申请记录）
+
+参数：
+- `billing_username`：必填
+- `limit`：可选（默认 200，最大 5000）
+
+返回：
+```json
+{"requests":[{"request_id":1,"request_type":"bind","billing_username":"alice","node_id":"60000","local_username":"alice","status":"pending"}]}
+```
+
+### `GET /api/admin/requests`（管理员：查看申请）
+
+参数：
+- `status`：可选（`pending/approved/rejected`）；为空表示全部
+- `limit`：可选（默认 200，最大 5000）
+
+### `POST /api/admin/requests/:id/approve`（管理员：通过）
+
+说明：当申请类型为 `bind` 时，通过会自动写入 `user_node_accounts`，用于扣费映射与 SSH 登录校验。
+
+### `POST /api/admin/requests/:id/reject`（管理员：拒绝）
+
+## SSH 登录校验（节点侧拉取 allowlist）
+
+### `GET /api/registry/nodes/:node_id/users.txt`
+
+用途：返回该节点(node_id)已登记通过的本地用户名列表（每行一个），供节点侧 PAM/SSH 校验缓存定期同步。
+
+### `GET /api/registry/resolve?node_id=...&local_username=...`
+
+用途：查询某个本地用户名在指定节点上是否已绑定，并返回对应计费账号。

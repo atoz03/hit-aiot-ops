@@ -472,9 +472,13 @@ ssh <node-user>@node01 "sudo cp /tmp/gpu-node-agent.service /etc/systemd/system/
 ```
 
 最简单做法：编辑 `/etc/systemd/system/gpu-node-agent.service`，设置：
-- `NODE_ID=node01`
+- `NODE_ID=60000`（约定为机器编号；推荐直接使用该节点的 SSH 端口号，例如 60000）
 - `CONTROLLER_URL=http://<controller-ip>:8000`
 - `AGENT_TOKEN=<你的 agent_token>`
+
+说明：
+- `node01` 仅表示“你用于 SSH 登录的地址/主机名”；不要求与 `NODE_ID` 相同。
+- 当启用“用户注册/绑定”后，控制器会用 `(node_id, 本地用户名)` 映射到“计费账号”扣费，因此 `NODE_ID` 必须稳定且全局唯一。
 
 启动：
 
@@ -486,7 +490,7 @@ ssh <node-user>@node01 "sudo systemctl enable gpu-node-agent && sudo systemctl r
 
 在控制节点查看：
 - `/metrics` 中 `gpuops_controller_reports_total` 是否增长
-- Web 管理页中查看用户余额/使用记录是否产生
+- Web 管理页中查看用户积分/余额/使用记录是否产生
 
 ## 5. 部署 Bash Hook（拦截“新 GPU 任务”）
 

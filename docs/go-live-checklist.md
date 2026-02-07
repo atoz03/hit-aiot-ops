@@ -27,7 +27,7 @@
 - 控制器仅对内网开放，或经网关 ACL 保护
 - `agent_token`、`admin_token`、`auth_secret` 已更换为强随机值，并安全保存
 - 管理员接口不要暴露到公网
-- 余额查询接口默认不鉴权（为了 Hook 低侵入），建议仅内网可达或通过网关保护
+- 积分/余额查询接口默认不鉴权（为了 Hook 低侵入），建议仅内网可达或通过网关保护
 
 ## 4. 功能闭环验证（上线前必做）
 
@@ -53,8 +53,8 @@
 - 控制器应记录 CPU-only usage 并扣减余额
 
 5) 限制动作
-- 将用户余额调到 `limited`：应阻止新 GPU 任务（Hook 生效）并下发 `set_cpu_quota`
-- 将用户余额调到 `blocked`：超过宽限期应下发 `kill_process`，并强限制 CPU
+- 将用户积分/余额调到 `limited`：应阻止新 GPU 任务（Hook 生效）并下发 `set_cpu_quota`
+- 将用户积分/余额调到 `blocked`：超过宽限期应下发 `kill_process`，并强限制 CPU
  - 验证 CPUQuota：systemd 场景可检查 `systemctl show user-<uid>.slice -p CPUQuota`
 
 ## 5. 运营参数建议

@@ -43,6 +43,25 @@ export type NodeStatus = {
 
 export type PriceRow = { Model?: string; Price?: number; model?: string; price?: number };
 
+export type RegistryResolveResp = {
+  registered: boolean;
+  billing_username?: string;
+};
+
+export type UserRequest = {
+  request_id: number;
+  request_type: "bind" | "open" | string;
+  billing_username: string;
+  node_id: string;
+  local_username: string;
+  message: string;
+  status: "pending" | "approved" | "rejected" | string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
 function trimSlashRight(v: string): string {
   return v.replace(/\/+$/, "");
 }
@@ -158,6 +177,42 @@ export class ApiClient {
     return await this.getJson(`/api/users/${encodeURIComponent(username)}/usage?limit=${limit}`);
   }
 
+  async registryResolve(nodeId: string, localUsername: string): Promise<RegistryResolveResp> {
+    const q = new URLSearchParams();
+    q.set("node_id", nodeId.trim());
+    q.set("local_username", localUsername.trim());
+    return await this.getJson(`/api/registry/resolve?${q.toString()}`);
+  }
+
+  async userRequests(billingUsername: string, limit: number): Promise<{ requests: UserRequest[] }> {
+    const q = new URLSearchParams();
+    q.set("billing_username", billingUsername.trim());
+    q.set("limit", String(limit));
+    return await this.getJson(`/api/requests?${q.toString()}`);
+  }
+
+  async createBindRequests(
+    billingUsername: string,
+    items: Array<{ node_id: string; local_username: string }>,
+    message: string,
+  ): Promise<{ ok: boolean; request_ids: number[] }> {
+    return await this.postJson("/api/requests/bind", { billing_username: billingUsername, items, message });
+  }
+
+  async createOpenRequest(
+    billingUsername: string,
+    nodeId: string,
+    localUsername: string,
+    message: string,
+  ): Promise<{ ok: boolean; request_id: number }> {
+    return await this.postJson("/api/requests/open", {
+      billing_username: billingUsername,
+      node_id: nodeId,
+      local_username: localUsername,
+      message,
+    });
+  }
+
   async adminUsers(): Promise<{ users: Array<{ Username?: string; Balance?: number; Status?: string; username?: string; balance?: number; status?: string }> }> {
     return await this.getJson("/api/admin/users", this.adminHeaders());
   }
@@ -191,6 +246,21 @@ export class ApiClient {
 
   async adminNodes(limit: number): Promise<{ nodes: NodeStatus[] }> {
     return await this.getJson(`/api/admin/nodes?limit=${limit}`, this.adminHeaders());
+  }
+
+  async adminRequests(params: { status?: string; limit?: number }): Promise<{ requests: UserRequest[] }> {
+    const q = new URLSearchParams();
+    if (params.status?.trim()) q.set("status", params.status.trim());
+    q.set("limit", String(params.limit ?? 200));
+    return await this.getJson(`/api/admin/requests?${q.toString()}`, this.adminHeaders());
+  }
+
+  async adminApproveRequest(requestId: number): Promise<{ ok: boolean; request: UserRequest }> {
+    return await this.postJson(`/api/admin/requests/${requestId}/approve`, {}, this.adminHeaders());
+  }
+
+  async adminRejectRequest(requestId: number): Promise<{ ok: boolean; request: UserRequest }> {
+    return await this.postJson(`/api/admin/requests/${requestId}/reject`, {}, this.adminHeaders());
   }
 
   async adminQueue(): Promise<{ queue: Array<{ username: string; gpu_type: string; count: number; timestamp: string }> }> {

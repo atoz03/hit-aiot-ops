@@ -74,6 +74,34 @@ CREATE TABLE IF NOT EXISTS admin_accounts (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- 用户“节点账号”绑定：按节点(node_id=机器编号/端口) + 本地账号(local_username) 映射到计费账号(billing_username)
+CREATE TABLE IF NOT EXISTS user_node_accounts (
+    node_id VARCHAR(50) NOT NULL,
+    local_username VARCHAR(50) NOT NULL,
+    billing_username VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (node_id, local_username)
+);
+
+-- 用户自助登记/开号申请（管理员审核）
+CREATE TABLE IF NOT EXISTS user_requests (
+    request_id SERIAL PRIMARY KEY,
+    request_type VARCHAR(20) NOT NULL, -- bind, open
+    billing_username VARCHAR(50) NOT NULL,
+    node_id VARCHAR(50) NOT NULL,
+    local_username VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL DEFAULT '',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending, approved, rejected
+    reviewed_by VARCHAR(50) NULL,
+    reviewed_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_username ON usage_records(username);
 CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_records(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_node ON usage_records(node_id);
+CREATE INDEX IF NOT EXISTS idx_user_node_accounts_billing ON user_node_accounts(billing_username);
+CREATE INDEX IF NOT EXISTS idx_user_requests_status ON user_requests(status);
+CREATE INDEX IF NOT EXISTS idx_user_requests_billing ON user_requests(billing_username);

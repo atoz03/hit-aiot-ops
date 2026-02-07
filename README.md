@@ -122,7 +122,8 @@ curl -fsS -H "Authorization: Bearer dev-admin-token" \
 ```bash
 cd node-agent
 go test ./...
-NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-token go run .
+# 约定：NODE_ID 使用机器编号（推荐直接使用端口号，例如 60000）
+NODE_ID=60000 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-token go run .
 ```
 
 说明：
@@ -133,9 +134,12 @@ NODE_ID=dev-node01 CONTROLLER_URL=http://127.0.0.1:8000 AGENT_TOKEN=dev-agent-to
 ## API 速查
 
 - `POST /api/metrics`（Agent 上报；需要 `X-Agent-Token`）
-- `GET /api/users/:username/balance`（余额查询；用于 Hook）
+- `GET /api/users/:username/balance`（积分/余额查询；用于 Hook）
 - `GET /api/users/:username/usage`（用户使用记录）
 - `POST /api/users/:username/recharge`（充值；需要 `Authorization: Bearer <adminToken>`）
+- `POST /api/requests/bind`（用户绑定登记；需审核）
+- `POST /api/requests/open`（用户开号申请；需审核）
+- `GET /api/admin/requests`（管理员查看申请）
 - `GET /api/admin/users`（管理员查询；需要管理员 token）
 - `POST /api/admin/prices`（设置 GPU 单价；需要管理员 token）
 - `GET /api/admin/usage`（管理员查询使用记录）

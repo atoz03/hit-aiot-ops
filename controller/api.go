@@ -49,6 +49,15 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/users/:username/usage", s.handleUserUsage)
 	api.POST("/users/:username/recharge", s.authAdmin(), s.handleRecharge)
 
+	// 用户注册/绑定与 SSH 登录校验
+	api.GET("/registry/resolve", s.handleRegistryResolve)
+	api.GET("/registry/nodes/:node_id/users.txt", s.handleRegistryNodeUsersTxt)
+
+	// 用户自助登记/开号申请（管理员审核）
+	api.GET("/requests", s.handleUserRequestsList)
+	api.POST("/requests/bind", s.handleUserBindRequestsCreate)
+	api.POST("/requests/open", s.handleUserOpenRequestCreate)
+
 	// 排队接口（可选）：当前实现为“纯排队/不分配”的可运行版本，便于后续接入真实资源分配策略
 	api.POST("/gpu/request", s.handleGPURequest)
 
@@ -59,6 +68,9 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/prices", s.handleAdminPrices)
 	admin.POST("/prices", s.handleAdminSetPrice)
 	admin.GET("/gpu/queue", s.handleAdminGPUQueue)
+	admin.GET("/requests", s.handleAdminRequestsList)
+	admin.POST("/requests/:id/approve", s.handleAdminRequestApprove)
+	admin.POST("/requests/:id/reject", s.handleAdminRequestReject)
 	admin.GET("/usage", s.handleAdminUsage)
 	admin.GET("/nodes", s.handleAdminNodes)
 	admin.GET("/usage/export.csv", s.handleAdminUsageExportCSV)
@@ -439,11 +451,14 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 		intervalMinutes = 1
 	}
 
-	type agg struct {
+	type localAgg struct {
 		pids []int32
-		cost float64
 	}
-	userAgg := make(map[string]*agg)
+	type billingAgg struct {
+		cost   float64
+		locals map[string]*localAgg // local_username -> pids
+	}
+	billingAggs := make(map[string]*billingAgg)
 	usageRecords := 0
 	gpuProcCount := 0
 	cpuProcCount := 0
@@ -472,7 +487,29 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 			cpuPricePerCoreMinute = v
 		}
 
+		// 同一台节点的映射在一次上报内复用，避免对每个进程重复查库
+		resolveCache := make(map[string]string) // local_username -> billing_username（未绑定时为自身）
+
 		for _, proc := range data.Users {
+			localUsername := strings.TrimSpace(proc.Username)
+			if localUsername == "" {
+				continue
+			}
+
+			billingUsername, ok := resolveCache[localUsername]
+			if !ok {
+				mapped, found, err := s.store.ResolveBillingUsernameTx(ctx, tx, data.NodeID, localUsername)
+				if err != nil {
+					return err
+				}
+				if found && strings.TrimSpace(mapped) != "" {
+					billingUsername = mapped
+				} else {
+					billingUsername = localUsername
+				}
+				resolveCache[localUsername] = billingUsername
+			}
+
 			gpuCost := 0.0
 			if len(proc.GPUUsage) > 0 {
 				gpuCost = CalculateProcessCost(proc, priceIndex, s.cfg.DefaultPricePerMinute)
@@ -484,7 +521,10 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 			if len(proc.GPUUsage) == 0 && proc.CPUPercent < 1.0 {
 				continue
 			}
-			if err := s.store.InsertUsageRecordTx(ctx, tx, data.NodeID, reportTS, proc, cost); err != nil {
+			// usage_records 归集到计费账号，便于按“中心账号”对账/查询
+			procForStore := proc
+			procForStore.Username = billingUsername
+			if err := s.store.InsertUsageRecordTx(ctx, tx, data.NodeID, reportTS, procForStore, cost); err != nil {
 				return err
 			}
 			usageRecords++
@@ -495,43 +535,55 @@ func (s *Server) processMetrics(ctx context.Context, data MetricsData, reportTS 
 				cpuProcCount++
 			}
 
-			a := userAgg[proc.Username]
-			if a == nil {
-				a = &agg{}
-				userAgg[proc.Username] = a
+			b := billingAggs[billingUsername]
+			if b == nil {
+				b = &billingAgg{locals: make(map[string]*localAgg)}
+				billingAggs[billingUsername] = b
 			}
-			a.cost += cost
-			a.pids = append(a.pids, proc.PID)
+			b.cost += cost
+			la := b.locals[localUsername]
+			if la == nil {
+				la = &localAgg{}
+				b.locals[localUsername] = la
+			}
+			la.pids = append(la.pids, proc.PID)
 		}
 
-		for username, a := range userAgg {
-			res, err := s.store.DeductBalanceTx(ctx, tx, username, a.cost, now, s.cfg)
+		for billingUsername, b := range billingAggs {
+			res, err := s.store.DeductBalanceTx(ctx, tx, billingUsername, b.cost, now, s.cfg)
 			if err != nil {
 				return err
 			}
-			actions = append(actions, DecideActions(now, res.PrevStatus, res.User, s.cfg.WarningThreshold, s.cfg.LimitedThreshold, grace, a.pids)...)
-			if s.cfg.EnableCPUControl {
-				if res.User.Status == "limited" {
-					actions = append(actions, Action{
-						Type:            "set_cpu_quota",
-						Username:        res.User.Username,
-						CPUQuotaPercent: s.cfg.CPULimitPercentLimited,
-						Reason:          "余额不足，限制 CPU 使用",
-					})
-				} else if res.User.Status == "blocked" {
-					actions = append(actions, Action{
-						Type:            "set_cpu_quota",
-						Username:        res.User.Username,
-						CPUQuotaPercent: s.cfg.CPULimitPercentBlocked,
-						Reason:          "已欠费，强限制 CPU 使用",
-					})
-				} else if res.PrevStatus == "limited" || res.PrevStatus == "blocked" {
-					actions = append(actions, Action{
-						Type:            "set_cpu_quota",
-						Username:        res.User.Username,
-						CPUQuotaPercent: 0,
-						Reason:          "余额已恢复，解除 CPU 限制",
-					})
+
+			// 注意：扣费与余额状态以“计费账号”为准；但下发动作必须针对“节点本地账号”，否则 Agent 无法生效。
+			for localUsername, la := range b.locals {
+				uLocal := res.User
+				uLocal.Username = localUsername
+				actions = append(actions, DecideActions(now, res.PrevStatus, uLocal, s.cfg.WarningThreshold, s.cfg.LimitedThreshold, grace, la.pids)...)
+
+				if s.cfg.EnableCPUControl {
+					if res.User.Status == "limited" {
+						actions = append(actions, Action{
+							Type:            "set_cpu_quota",
+							Username:        localUsername,
+							CPUQuotaPercent: s.cfg.CPULimitPercentLimited,
+							Reason:          "余额不足，限制 CPU 使用",
+						})
+					} else if res.User.Status == "blocked" {
+						actions = append(actions, Action{
+							Type:            "set_cpu_quota",
+							Username:        localUsername,
+							CPUQuotaPercent: s.cfg.CPULimitPercentBlocked,
+							Reason:          "已欠费，强限制 CPU 使用",
+						})
+					} else if res.PrevStatus == "limited" || res.PrevStatus == "blocked" {
+						actions = append(actions, Action{
+							Type:            "set_cpu_quota",
+							Username:        localUsername,
+							CPUQuotaPercent: 0,
+							Reason:          "余额已恢复，解除 CPU 限制",
+						})
+					}
 				}
 			}
 		}

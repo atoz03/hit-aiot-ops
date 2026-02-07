@@ -495,6 +495,259 @@ LIMIT $2`, username, limit)
 	return out, rows.Err()
 }
 
+func (s *Store) UpsertUserNodeAccountTx(ctx context.Context, tx *sql.Tx, nodeID string, localUsername string, billingUsername string) error {
+	nodeID = strings.TrimSpace(nodeID)
+	localUsername = strings.TrimSpace(localUsername)
+	billingUsername = strings.TrimSpace(billingUsername)
+	if nodeID == "" || localUsername == "" || billingUsername == "" {
+		return errors.New("node_id/local_username/billing_username 不能为空")
+	}
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO user_node_accounts(node_id, local_username, billing_username)
+VALUES($1,$2,$3)
+ON CONFLICT (node_id, local_username) DO UPDATE
+SET billing_username=EXCLUDED.billing_username,
+    updated_at=NOW()`, nodeID, localUsername, billingUsername)
+	return err
+}
+
+func (s *Store) ResolveBillingUsernameTx(ctx context.Context, tx *sql.Tx, nodeID string, localUsername string) (string, bool, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	localUsername = strings.TrimSpace(localUsername)
+	if nodeID == "" || localUsername == "" {
+		return "", false, errors.New("node_id/local_username 不能为空")
+	}
+	var billing string
+	err := tx.QueryRowContext(ctx, `
+SELECT billing_username
+FROM user_node_accounts
+WHERE node_id=$1 AND local_username=$2`, nodeID, localUsername).Scan(&billing)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return billing, true, nil
+}
+
+func (s *Store) ListRegisteredLocalUsersByNode(ctx context.Context, nodeID string, limit int) ([]string, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil, errors.New("node_id 不能为空")
+	}
+	if limit <= 0 || limit > 200000 {
+		limit = 50000
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT local_username
+FROM user_node_accounts
+WHERE node_id=$1
+ORDER BY local_username
+LIMIT $2`, nodeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateUserRequestTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	requestType string,
+	billingUsername string,
+	nodeID string,
+	localUsername string,
+	message string,
+) (int, error) {
+	requestType = strings.TrimSpace(requestType)
+	billingUsername = strings.TrimSpace(billingUsername)
+	nodeID = strings.TrimSpace(nodeID)
+	localUsername = strings.TrimSpace(localUsername)
+	message = strings.TrimSpace(message)
+
+	if requestType != "bind" && requestType != "open" {
+		return 0, errors.New("request_type 仅支持 bind/open")
+	}
+	if billingUsername == "" || nodeID == "" || localUsername == "" {
+		return 0, errors.New("billing_username/node_id/local_username 不能为空")
+	}
+
+	var id int
+	err := tx.QueryRowContext(ctx, `
+INSERT INTO user_requests(request_type, billing_username, node_id, local_username, message, status)
+VALUES($1,$2,$3,$4,$5,'pending')
+RETURNING request_id`, requestType, billingUsername, nodeID, localUsername, message).Scan(&id)
+	return id, err
+}
+
+func (s *Store) ListUserRequestsByBilling(ctx context.Context, billingUsername string, limit int) ([]UserRequest, error) {
+	billingUsername = strings.TrimSpace(billingUsername)
+	if billingUsername == "" {
+		return nil, errors.New("billing_username 不能为空")
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT request_id, request_type, billing_username, node_id, local_username, message, status,
+       reviewed_by, reviewed_at, created_at, updated_at
+FROM user_requests
+WHERE billing_username=$1
+ORDER BY created_at DESC
+LIMIT $2`, billingUsername, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []UserRequest
+	for rows.Next() {
+		var r UserRequest
+		var reviewedBy sql.NullString
+		var reviewedAt sql.NullTime
+		if err := rows.Scan(
+			&r.RequestID, &r.RequestType, &r.BillingUsername, &r.NodeID, &r.LocalUsername,
+			&r.Message, &r.Status, &reviewedBy, &reviewedAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if reviewedBy.Valid {
+			v := reviewedBy.String
+			r.ReviewedBy = &v
+		}
+		if reviewedAt.Valid {
+			v := reviewedAt.Time
+			r.ReviewedAt = &v
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListUserRequestsAdmin(ctx context.Context, status string, limit int) ([]UserRequest, error) {
+	status = strings.TrimSpace(status)
+	if limit <= 0 || limit > 5000 {
+		limit = 200
+	}
+
+	var rows *sql.Rows
+	var err error
+	if status == "" {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT request_id, request_type, billing_username, node_id, local_username, message, status,
+       reviewed_by, reviewed_at, created_at, updated_at
+FROM user_requests
+ORDER BY created_at DESC
+LIMIT $1`, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT request_id, request_type, billing_username, node_id, local_username, message, status,
+       reviewed_by, reviewed_at, created_at, updated_at
+FROM user_requests
+WHERE status=$1
+ORDER BY created_at DESC
+LIMIT $2`, status, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []UserRequest
+	for rows.Next() {
+		var r UserRequest
+		var reviewedBy sql.NullString
+		var reviewedAt sql.NullTime
+		if err := rows.Scan(
+			&r.RequestID, &r.RequestType, &r.BillingUsername, &r.NodeID, &r.LocalUsername,
+			&r.Message, &r.Status, &reviewedBy, &reviewedAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if reviewedBy.Valid {
+			v := reviewedBy.String
+			r.ReviewedBy = &v
+		}
+		if reviewedAt.Valid {
+			v := reviewedAt.Time
+			r.ReviewedAt = &v
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ReviewUserRequestTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	requestID int,
+	newStatus string,
+	reviewedBy string,
+	reviewedAt time.Time,
+) (UserRequest, error) {
+	if requestID <= 0 {
+		return UserRequest{}, errors.New("request_id 不合法")
+	}
+	newStatus = strings.TrimSpace(newStatus)
+	reviewedBy = strings.TrimSpace(reviewedBy)
+	if newStatus != "approved" && newStatus != "rejected" {
+		return UserRequest{}, errors.New("status 仅支持 approved/rejected")
+	}
+	if reviewedBy == "" {
+		reviewedBy = "admin"
+	}
+
+	// 锁住记录，避免并发重复审批
+	var r UserRequest
+	var reviewedByPrev sql.NullString
+	var reviewedAtPrev sql.NullTime
+	if err := tx.QueryRowContext(ctx, `
+SELECT request_id, request_type, billing_username, node_id, local_username, message, status,
+       reviewed_by, reviewed_at, created_at, updated_at
+FROM user_requests
+WHERE request_id=$1
+FOR UPDATE`, requestID).Scan(
+		&r.RequestID, &r.RequestType, &r.BillingUsername, &r.NodeID, &r.LocalUsername,
+		&r.Message, &r.Status, &reviewedByPrev, &reviewedAtPrev, &r.CreatedAt, &r.UpdatedAt,
+	); err != nil {
+		return UserRequest{}, err
+	}
+	if r.Status != "pending" {
+		return UserRequest{}, errors.New("该申请已处理，不能重复审核")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE user_requests
+SET status=$2, reviewed_by=$3, reviewed_at=$4, updated_at=NOW()
+WHERE request_id=$1`, requestID, newStatus, reviewedBy, reviewedAt); err != nil {
+		return UserRequest{}, err
+	}
+
+	// bind 申请在 approved 时，写入映射表，供计费与 SSH 校验使用
+	if newStatus == "approved" && r.RequestType == "bind" {
+		if err := s.UpsertUserNodeAccountTx(ctx, tx, r.NodeID, r.LocalUsername, r.BillingUsername); err != nil {
+			return UserRequest{}, err
+		}
+	}
+
+	r.Status = newStatus
+	r.ReviewedBy = &reviewedBy
+	r.ReviewedAt = &reviewedAt
+	r.UpdatedAt = reviewedAt
+	return r, nil
+}
+
 func (s *Store) UpsertNodeStatusTx(
 	ctx context.Context,
 	tx *sql.Tx,

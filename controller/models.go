@@ -76,3 +76,27 @@ type NodeStatus struct {
 	CostTotal         float64   `json:"cost_total"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
+
+// UserNodeAccount 表示“节点本地账号”到“计费账号”的映射。
+// 约定：node_id 为机器编号（可用端口号，例如 60000）；local_username 为该节点上的 Linux 用户名。
+type UserNodeAccount struct {
+	NodeID          string    `json:"node_id"`
+	LocalUsername   string    `json:"local_username"`
+	BillingUsername string    `json:"billing_username"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type UserRequest struct {
+	RequestID       int        `json:"request_id"`
+	RequestType     string     `json:"request_type"` // bind/open
+	BillingUsername string     `json:"billing_username"`
+	NodeID          string     `json:"node_id"`
+	LocalUsername   string     `json:"local_username"`
+	Message         string     `json:"message"`
+	Status          string     `json:"status"` // pending/approved/rejected
+	ReviewedBy      *string    `json:"reviewed_by,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}

@@ -185,8 +185,9 @@ cd node-agent
 go build -o node-agent main.go
 
 # 部署到节点（单个二进制文件）
-scp node-agent root@node01:/usr/local/bin/
-ssh root@node01 "chmod +x /usr/local/bin/node-agent"
+# 约定：NODE_ID 使用机器编号（推荐用端口号，例如 60000）；host 可用 IP/主机名
+scp node-agent root@192.168.1.104:/usr/local/bin/
+ssh root@192.168.1.104 "chmod +x /usr/local/bin/node-agent"
 
 # 创建systemd服务
 cat > /etc/systemd/system/gpu-node-agent.service <<EOF
@@ -197,7 +198,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-Environment="NODE_ID=node01"
+Environment="NODE_ID=60000"
 Environment="CONTROLLER_URL=http://controller:8000"
 ExecStart=/usr/local/bin/node-agent
 Restart=always
@@ -228,7 +229,7 @@ systemctl start gpu-node-agent
 POST /api/metrics
 
 // 用户查询余额
-GET /api/users/:username/balance
+GET /api/users/:username/balance   # 积分/余额查询
 
 // 用户充值
 POST /api/users/:username/recharge
@@ -503,7 +504,7 @@ mc cp /local/scratch/$USER/$SLURM_JOB_ID/final_model.pth minio/models/
 ### 5.1 核心组件
 - **节点Agent**：Golang 1.21+（编译成单个二进制文件）
 - **中转机控制器**：Golang 1.21+ + Gin框架
-- **数据库**：PostgreSQL 15+（用户余额、使用记录、计费）
+- **数据库**：PostgreSQL 15+（用户积分/余额、使用记录、计费）
 - **监控**：Prometheus + Grafana + Node Exporter + NVIDIA DCGM Exporter
 - **Web管理界面**：Vue.js 3 + TypeScript + Element Plus
 
@@ -579,7 +580,7 @@ systemctl status gpu-node-agent
 tail -f /var/log/gpu-node-agent.log
 
 # 用户测试
-ssh testuser@node01
+ssh testuser@192.168.1.104
 python train.py  # 应该能看到余额提示
 ```
 
@@ -598,7 +599,8 @@ python train.py  # 应该能看到余额提示
 #!/bin/bash
 # deploy.sh - 批量部署脚本
 
-NODES="node01 node02 node03 ... node24"
+# 推荐格式：机器编号:IP/主机名（机器编号建议直接用端口号，例如 60000）
+NODES="60000:192.168.1.104 60001:192.168.1.220 60002:192.168.1.103 ..."
 CONTROLLER_URL="http://controller:8000"
 
 for node in $NODES; do
@@ -645,7 +647,7 @@ done
 
 - 管理员端：
   - 查看所有节点状态
-  - 查看所有用户余额
+  - 查看所有用户积分/余额
   - 手动充值/扣费
   - 设置GPU价格
   - 查看系统统计
@@ -999,7 +1001,7 @@ func (c *Controller) ReceiveMetrics(ctx *gin.Context) {
 ### 8.5 用户工具
 - `tools/check_quota.sh` - Bash hook脚本
 - `tools/gpu-request` - GPU申请工具（可选）
-- `tools/balance-query` - 余额查询工具
+- `tools/balance-query` - 积分/余额查询工具
 
 ### 8.6 Web界面
 - `web/src/` - Vue3 + TypeScript 源码（Element Plus）
