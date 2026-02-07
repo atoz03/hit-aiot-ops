@@ -31,8 +31,15 @@ docker compose up -d
 - 如果你所在网络无法直接访问 Docker Hub，可通过环境变量替换镜像来源（例如公司内网镜像仓库/镜像加速器）：
 
 ```bash
-export POSTGRES_IMAGE="postgres:18.1"       # 也可以改成你的镜像仓库地址
+export POSTGRES_IMAGE="postgres:18.1"       # 也可以改成你的镜像仓库地址（或镜像代理域名）
 docker compose up -d --pull missing        # 可选：always / missing / never
+```
+
+示例：使用 Docker Hub 镜像加速/代理（不同网络可用性不同，建议逐个 `docker pull` 验证）：
+
+```bash
+export POSTGRES_IMAGE="docker.m.daocloud.io/library/postgres:18.1"
+docker compose up -d --pull missing
 ```
 
 常见排障（遇到 “Pulled 但 No such image” 这类现象时）：
@@ -45,6 +52,10 @@ docker image inspect postgres:18.1 >/dev/null
 docker context show
 docker version
 ```
+
+如果你遇到类似 `x509: certificate is valid for *.facebook.com ... not registry-1.docker.io`：
+- 通常是网络/代理/DNS 劫持导致你连到的不是 Docker Hub 的真实服务。
+- 建议优先使用镜像加速/代理（如上），或检查本机 `HTTPS_PROXY/HTTP_PROXY`、`/etc/hosts`、DNS 配置。
 
 如果 `docker compose pull` 或 `docker pull postgres:18.1` 本身失败，请优先检查：
 - 代理/镜像加速器/私有仓库配置（`/etc/docker/daemon.json` 的 `registry-mirrors` 等）

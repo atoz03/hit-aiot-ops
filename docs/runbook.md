@@ -220,6 +220,22 @@ export POSTGRES_IMAGE="postgres:18.1"       # 也可以改成你的镜像仓库�
 docker compose up -d --pull missing        # 可选：always / missing / never
 ```
 
+常见可用的 Docker Hub 镜像加速/代理（示例；不同网络可用性不同，建议逐个 `docker pull` 验证）：
+
+- `docker.m.daocloud.io`
+- `docker.1ms.run`
+- `hub1.nat.tf`
+- `docker.1panel.live`
+- `dockerproxy.1panel.live`
+- `docker.fnnas.com`
+
+用法示例（把 `postgres:18.1` 从 Docker Hub 改为镜像代理拉取）：
+
+```bash
+export POSTGRES_IMAGE="docker.m.daocloud.io/library/postgres:18.1"
+docker compose up -d --pull missing
+```
+
 注意（非常常见的坑）：
 - **优先不要加 `sudo`**。如果必须使用 `sudo`，请保证全程一致（`sudo docker ...` / `sudo docker compose ...`），避免因为 Docker 上下文/环境变量/HOME 不同导致行为不一致。
 - 如果你用 `sudo` 但又想保留 `POSTGRES_IMAGE` 等环境变量，请用 `sudo -E`（或把变量写入 compose 的 `.env` 文件）。
@@ -234,6 +250,10 @@ docker compose pull postgres
 docker image ls postgres
 docker image inspect postgres:18.1 >/dev/null
 ```
+
+如果你遇到类似 `x509: certificate is valid for *.facebook.com ... not registry-1.docker.io`：
+- 这通常不是镜像本身的问题，而是网络/代理/DNS 劫持导致你连到的不是 Docker Hub 的真实服务。
+- 处理思路：优先改用上面的镜像代理域名；或检查本机的 `HTTPS_PROXY/HTTP_PROXY`、`/etc/hosts`、DNS 解析是否被改写。
 
 如果你使用了 `sudo`，请把上述命令再用 `sudo` 运行一遍并对比差异：
 
