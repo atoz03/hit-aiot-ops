@@ -31,7 +31,7 @@ docker compose up -d
 - 如果你所在网络无法直接访问 Docker Hub，可通过环境变量替换镜像来源（例如公司内网镜像仓库/镜像加速器）：
 
 ```bash
-export POSTGRES_IMAGE="postgres:15"         # 也可以改成你的镜像仓库地址
+export POSTGRES_IMAGE="postgres:18.1"       # 也可以改成你的镜像仓库地址
 docker compose up -d --pull missing        # 可选：always / missing / never
 ```
 
@@ -40,13 +40,13 @@ docker compose up -d --pull missing        # 可选：always / missing / never
 ```bash
 docker compose pull postgres
 docker image ls postgres
-docker image ls | grep -E "postgres\\s+15|docker\\.io/library/postgres:15" || true
-docker image inspect postgres:15 >/dev/null
+docker image ls | grep -E "postgres\\s+18\\.1|docker\\.io/library/postgres:18\\.1" || true
+docker image inspect postgres:18.1 >/dev/null
 docker context show
 docker version
 ```
 
-如果 `docker compose pull` 或 `docker pull postgres:15` 本身失败，请优先检查：
+如果 `docker compose pull` 或 `docker pull postgres:18.1` 本身失败，请优先检查：
 - 代理/镜像加速器/私有仓库配置（`/etc/docker/daemon.json` 的 `registry-mirrors` 等）
 - 磁盘空间（`df -h`、`docker system df`）
 - Docker 守护进程状态（如 `systemctl status docker` / `systemctl restart docker`）

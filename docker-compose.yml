@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:15}
+    image: ${POSTGRES_IMAGE:-postgres:18.1}
     container_name: gpuops-postgres
     environment:
       POSTGRES_DB: gpuops

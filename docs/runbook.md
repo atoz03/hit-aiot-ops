@@ -9,6 +9,15 @@
 
 ## 0. 上线前你需要准备什么（不要跳步）
 
+### 0.0 版本基线（截至 2026-02-07，美西时间）
+
+以下为本文档建议的“基线版本”（便于团队统一环境与排障口径）：
+- PostgreSQL：18.1
+- Node.js（LTS）：24.13.0
+- npm/cli（稳定版）：11.9.0（如需与 Node 自带版本对齐，见 0.3 的可选说明）
+- pnpm（latest）：10.28.2
+- Go：1.21+（建议 1.21 或 1.22；本仓库 `go.work` 声明为 1.21）
+
 1) 一台控制节点（中转机）用于部署控制器（建议内网 IP）
 2) 一个 PostgreSQL（同机或独立实例均可，建议独立实例/主备）
 3) 所有计算节点具备：
@@ -91,41 +100,42 @@ go version
 
 ## 0.3 安装 Node.js + pnpm（用于构建前端）
 
-目标：Node.js 18+（建议 20+），并使用 pnpm（本仓库使用 corepack/pnpm）。
+目标：Node.js 24（LTS，建议 `v24.13.0` 或更新的同 LTS 分支版本），并使用 pnpm（本仓库使用 corepack/pnpm）。
 
 检查：
 ```bash
 node -v || true
 corepack --version || true
 pnpm -v || true
+npm -v || true
 ```
 
 安装 Node.js（Ubuntu/Debian，NodeSource 方式）：
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl ca-certificates
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 node -v
 corepack enable
-corepack prepare pnpm@10.28.0 --activate
+corepack prepare pnpm@10.28.2 --activate
 pnpm -v
 ```
 
 安装 Node.js（Rocky/RHEL，NodeSource 方式）：
 ```bash
 sudo dnf install -y curl ca-certificates
-curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
 sudo dnf install -y nodejs
 node -v
 corepack enable
-corepack prepare pnpm@10.28.0 --activate
+corepack prepare pnpm@10.28.2 --activate
 pnpm -v
 ```
 
 如果你所在环境不允许 `curl | bash`，可改用 Node.js 官方 tarball（示例；你需要先选定版本号与架构）：
 ```bash
-NODE_VERSION="22.x.y"   # 例如 22.11.0；请以 nodejs.org/dist 为准
+NODE_VERSION="24.13.0"  # 请以 nodejs.org/dist 为准
 NODE_ARCH="x64"         # amd64 用 x64；arm64 用 arm64
 curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
 sudo mkdir -p /usr/local/lib/nodejs
@@ -134,8 +144,16 @@ echo "export PATH=/usr/local/lib/nodejs/node-v${NODE_VERSION}-linux-${NODE_ARCH}
 source /etc/profile.d/nodejs.sh
 node -v
 corepack enable
-corepack prepare pnpm@10.28.0 --activate
+corepack prepare pnpm@10.28.2 --activate
 pnpm -v
+```
+
+（可选）如果你需要把 npm/cli 升级到指定稳定版（例如 `v11.9.0`），可执行：
+
+```bash
+npm -v
+npm i -g npm@11.9.0
+npm -v
 ```
 
 ## 0.4 获取代码（控制节点本机）
@@ -198,7 +216,7 @@ docker compose logs -f postgres
 如果你所在网络无法直接访问 Docker Hub，或需要走公司内网镜像仓库/镜像加速器，可通过环境变量覆盖镜像来源（见 `docker-compose.yml`）：
 
 ```bash
-export POSTGRES_IMAGE="postgres:15"         # 也可以改成你的镜像仓库地址
+export POSTGRES_IMAGE="postgres:18.1"       # 也可以改成你的镜像仓库地址
 docker compose up -d --pull missing        # 可选：always / missing / never
 ```
 
@@ -214,7 +232,7 @@ docker version
 docker compose version
 docker compose pull postgres
 docker image ls postgres
-docker image inspect postgres:15 >/dev/null
+docker image inspect postgres:18.1 >/dev/null
 ```
 
 如果你使用了 `sudo`，请把上述命令再用 `sudo` 运行一遍并对比差异：
@@ -225,7 +243,7 @@ sudo docker version
 sudo docker compose version
 sudo docker compose pull postgres
 sudo docker image ls postgres
-sudo docker image inspect postgres:15 >/dev/null
+sudo docker image inspect postgres:18.1 >/dev/null
 ```
 
 如果 `docker pull` 本身失败，优先检查：
