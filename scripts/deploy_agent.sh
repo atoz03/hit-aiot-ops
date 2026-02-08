@@ -1,9 +1,11 @@
 #!/bin/bash
 # 批量部署 node-agent（示例脚本）
 #
-# 说明：
-# - 该脚本不会执行破坏性命令（不会删除文件/清理目录）
-# - 需要你自行准备节点列表与 SSH 免密/凭证
+# 特性：
+# - 支持 Ubuntu 22.04 自动安装运行依赖（curl/jq 等）
+# - 支持可选安装 Go（某些节点后续需要本地调试/编译时）
+# - 支持非 root SSH 用户（要求该用户可 sudo）
+# - 保留 SSH Guard（登记/白名单登录校验）部署逻辑
 
 set -euo pipefail
 
@@ -11,6 +13,16 @@ AGENT_BIN="${AGENT_BIN:-./node-agent/node-agent}"
 CONTROLLER_URL="${CONTROLLER_URL:-http://controller:8000}"
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 NODES="${NODES:-}"
+
+# SSH 连接
+SSH_USER="${SSH_USER:-root}"
+SSH_OPTS="${SSH_OPTS:--o StrictHostKeyChecking=no}"
+
+# 依赖安装
+INSTALL_PREREQS="${INSTALL_PREREQS:-1}"   # 1: 安装运行依赖
+INSTALL_GO="${INSTALL_GO:-0}"             # 1: 额外安装 Go
+GO_VERSION="${GO_VERSION:-1.22.5}"
+
 ENABLE_SSH_GUARD="${ENABLE_SSH_GUARD:-0}"
 SSH_GUARD_EXCLUDE_USERS="${SSH_GUARD_EXCLUDE_USERS:-root baojh xqt}"
 SSH_GUARD_FAIL_OPEN="${SSH_GUARD_FAIL_OPEN:-1}"
@@ -27,8 +39,53 @@ if [[ -z "${AGENT_TOKEN}" ]]; then
 fi
 if [[ ! -f "${AGENT_BIN}" ]]; then
   echo "未找到 Agent 二进制：${AGENT_BIN}" >&2
+  echo "提示：请先在控制器侧编译，例如：cd node-agent && go build -o node-agent ." >&2
   exit 2
 fi
+
+if [[ "${SSH_USER}" == "root" ]]; then
+  REMOTE_SUDO=""
+else
+  REMOTE_SUDO="sudo"
+fi
+
+install_prereqs() {
+  local target="$1"
+  if [[ "${INSTALL_PREREQS}" != "1" ]]; then
+    return 0
+  fi
+
+  echo "==> [${target}] 安装运行依赖"
+  ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc '
+set -euo pipefail
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "apt-get 不存在，当前脚本仅支持 Ubuntu/Debian" >&2
+  exit 2
+fi
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl jq procps pciutils
+'"
+
+  if [[ "${INSTALL_GO}" == "1" ]]; then
+    echo "==> [${target}] 检查/安装 Go ${GO_VERSION}"
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc '
+set -euo pipefail
+if command -v go >/dev/null 2>&1; then
+  exit 0
+fi
+cd /tmp
+rm -f go.tgz
+curl -fL "https://mirrors.tuna.tsinghua.edu.cn/golang/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tgz \
+|| curl -fL "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tgz \
+|| curl -fL "https://mirrors.cloud.tencent.com/golang/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tgz
+rm -rf /usr/local/go
+tar -C /usr/local -xzf /tmp/go.tgz
+ln -sf /usr/local/go/bin/go /usr/local/bin/go
+go version
+'"
+  fi
+}
 
 for item in ${NODES}; do
   node_id="${item}"
@@ -37,12 +94,18 @@ for item in ${NODES}; do
     node_id="${item%%:*}"
     host="${item#*:}"
   fi
+  target="${SSH_USER}@${host}"
 
-  echo "==> 部署到 ${host}（NODE_ID=${node_id}）"
-  scp "${AGENT_BIN}" "root@${host}:/usr/local/bin/node-agent"
-  ssh "root@${host}" "chmod +x /usr/local/bin/node-agent"
-  ssh "root@${host}" "mkdir -p /etc/systemd/system"
-  ssh "root@${host}" "cat > /etc/systemd/system/gpu-node-agent.service <<EOF
+  echo "==> 部署到 ${target}（NODE_ID=${node_id}）"
+
+  install_prereqs "${target}"
+
+  scp ${SSH_OPTS} "${AGENT_BIN}" "${target}:/tmp/node-agent"
+  ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} mv /tmp/node-agent /usr/local/bin/node-agent"
+  ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} chmod +x /usr/local/bin/node-agent"
+
+  ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} mkdir -p /etc/systemd/system"
+  ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'cat > /etc/systemd/system/gpu-node-agent.service <<SVC
 [Unit]
 Description=GPU Cluster Node Agent
 After=network.target
@@ -58,28 +121,28 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-EOF"
-  ssh "root@${host}" "systemctl daemon-reload && systemctl enable gpu-node-agent && systemctl restart gpu-node-agent"
+SVC'"
+
+  ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} systemctl daemon-reload && ${REMOTE_SUDO} systemctl enable gpu-node-agent && ${REMOTE_SUDO} systemctl restart gpu-node-agent"
 
   if [[ "${ENABLE_SSH_GUARD}" == "1" ]]; then
     echo "==> 安装 SSH 登录拦截（仅允许已登记用户；排除：${SSH_GUARD_EXCLUDE_USERS}）"
-    ssh "root@${host}" "mkdir -p /opt/gpu-cluster /etc/gpu-cluster /var/lib/gpu-cluster /etc/systemd/system"
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} mkdir -p /opt/gpu-cluster /etc/gpu-cluster /var/lib/gpu-cluster /etc/systemd/system"
 
-    ssh "root@${host}" "cat > /etc/gpu-cluster/ssh_guard.conf <<EOF
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'cat > /etc/gpu-cluster/ssh_guard.conf <<CONF
 CONTROLLER_URL=\"${CONTROLLER_URL}\"
 NODE_ID=\"${node_id}\"
 EXCLUDE_USERS=\"${SSH_GUARD_EXCLUDE_USERS}\"
 FAIL_OPEN=\"${SSH_GUARD_FAIL_OPEN}\"
 ALLOWLIST_FILE=\"/var/lib/gpu-cluster/registered_users.txt\"
-EOF"
+CONF'"
 
-    ssh "root@${host}" "cat > /opt/gpu-cluster/sync_registered_users.sh <<'EOF'
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'cat > /opt/gpu-cluster/sync_registered_users.sh <<\"EOF2\"
 #!/bin/bash
 set -euo pipefail
 
 CONF=\"/etc/gpu-cluster/ssh_guard.conf\"
 if [[ -f \"${CONF}\" ]]; then
-  # shellcheck disable=SC1090
   source \"${CONF}\"
 fi
 
@@ -98,16 +161,15 @@ mkdir -p \"$(dirname \"${ALLOWLIST_FILE}\")\"
 curl -fsS \"${CONTROLLER_URL}/api/registry/nodes/${NODE_ID}/users.txt\" -o \"${tmp}\"
 mv \"${tmp}\" \"${ALLOWLIST_FILE}\"
 chmod 0644 \"${ALLOWLIST_FILE}\"
-EOF"
-    ssh "root@${host}" "chmod +x /opt/gpu-cluster/sync_registered_users.sh"
+EOF2'"
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} chmod +x /opt/gpu-cluster/sync_registered_users.sh"
 
-    ssh "root@${host}" "cat > /opt/gpu-cluster/ssh_login_check.sh <<'EOF'
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'cat > /opt/gpu-cluster/ssh_login_check.sh <<\"EOF2\"
 #!/bin/bash
 set -euo pipefail
 
 CONF=\"/etc/gpu-cluster/ssh_guard.conf\"
 if [[ -f \"${CONF}\" ]]; then
-  # shellcheck disable=SC1090
   source \"${CONF}\"
 fi
 
@@ -155,10 +217,10 @@ if [[ \"${FAIL_OPEN}\" == \"1\" && -z \"${resp}\" ]]; then
   exit 0
 fi
 exit 1
-EOF"
-    ssh "root@${host}" "chmod +x /opt/gpu-cluster/ssh_login_check.sh"
+EOF2'"
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} chmod +x /opt/gpu-cluster/ssh_login_check.sh"
 
-    ssh "root@${host}" "cat > /etc/systemd/system/gpu-ssh-guard-sync.service <<'EOF'
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'cat > /etc/systemd/system/gpu-ssh-guard-sync.service <<\"EOF2\"
 [Unit]
 Description=GPU SSH Guard Allowlist Sync
 After=network-online.target
@@ -167,9 +229,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/opt/gpu-cluster/sync_registered_users.sh
-EOF"
+EOF2'"
 
-    ssh "root@${host}" "cat > /etc/systemd/system/gpu-ssh-guard-sync.timer <<'EOF'
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'cat > /etc/systemd/system/gpu-ssh-guard-sync.timer <<\"EOF2\"
 [Unit]
 Description=GPU SSH Guard Allowlist Sync Timer
 
@@ -180,12 +242,10 @@ Unit=gpu-ssh-guard-sync.service
 
 [Install]
 WantedBy=timers.target
-EOF"
+EOF2'"
 
-    # 启用定时同步（先跑一次，尽量避免首次拦截误伤）
-    ssh "root@${host}" "systemctl daemon-reload && systemctl enable --now gpu-ssh-guard-sync.timer && systemctl start gpu-ssh-guard-sync.service || true"
-
-    # PAM 接入（idempotent）：在 /etc/pam.d/sshd 的 account 阶段添加 pam_exec
-    ssh "root@${host}" "if [[ -f /etc/pam.d/sshd ]] && ! grep -q \"/opt/gpu-cluster/ssh_login_check.sh\" /etc/pam.d/sshd; then echo \"account required pam_exec.so quiet /opt/gpu-cluster/ssh_login_check.sh\" >> /etc/pam.d/sshd; fi"
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} systemctl daemon-reload && ${REMOTE_SUDO} systemctl enable --now gpu-ssh-guard-sync.timer && ${REMOTE_SUDO} systemctl start gpu-ssh-guard-sync.service || true"
+    ssh ${SSH_OPTS} "${target}" "${REMOTE_SUDO} bash -lc 'if [[ -f /etc/pam.d/sshd ]] && ! grep -q \"/opt/gpu-cluster/ssh_login_check.sh\" /etc/pam.d/sshd; then echo \"account required pam_exec.so quiet /opt/gpu-cluster/ssh_login_check.sh\" >> /etc/pam.d/sshd; fi'"
   fi
+
 done

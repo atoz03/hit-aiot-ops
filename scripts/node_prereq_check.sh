@@ -6,6 +6,10 @@ set -euo pipefail
 echo "==> 基本信息"
 echo "hostname: $(hostname)"
 echo "user: $(id -un) uid=$(id -u)"
+if [[ -f /etc/os-release ]]; then
+  . /etc/os-release
+  echo "os: ${PRETTY_NAME:-unknown}"
+fi
 
 echo
 echo "==> systemd"
@@ -14,6 +18,16 @@ if [[ -d /run/systemd/system ]]; then
 else
   echo "systemd: no"
 fi
+
+echo
+echo "==> 常用依赖"
+for c in curl jq go sudo; do
+  if command -v "${c}" >/dev/null 2>&1; then
+    echo "${c}: yes ($(command -v "${c}"))"
+  else
+    echo "${c}: no"
+  fi
+done
 
 echo
 echo "==> GPU / nvidia-smi"

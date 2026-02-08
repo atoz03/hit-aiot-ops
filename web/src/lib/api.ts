@@ -12,6 +12,17 @@ export type AuthMeResp = {
   csrf_token?: string;
 };
 
+export type UserProfile = {
+  username: string;
+  email?: string;
+  real_name?: string;
+  student_id?: string;
+  advisor?: string;
+  expected_graduation_year?: number;
+  phone?: string;
+  role: string;
+};
+
 export type BalanceResp = {
   username: string;
   balance: number;
@@ -22,10 +33,41 @@ export type UsageRecord = {
   node_id: string;
   username: string;
   timestamp: string;
+  pid?: number;
   cpu_percent: number;
   memory_mb: number;
+  gpu_count?: number;
+  command?: string;
   gpu_usage: string;
   cost: number;
+};
+
+export type UsageUserSummary = {
+  username: string;
+  usage_records: number;
+  gpu_process_records: number;
+  cpu_process_records: number;
+  total_cpu_percent: number;
+  total_memory_mb: number;
+  total_cost: number;
+};
+
+export type UsageMonthlySummary = {
+  month: string;
+  username: string;
+  usage_records: number;
+  gpu_process_records: number;
+  cpu_process_records: number;
+  total_cpu_percent: number;
+  total_memory_mb: number;
+  total_cost: number;
+};
+
+export type RechargeSummary = {
+  username: string;
+  recharge_count: number;
+  recharge_total: number;
+  last_recharge: string;
 };
 
 export type NodeStatus = {
@@ -34,10 +76,32 @@ export type NodeStatus = {
   last_report_id: string;
   last_report_ts: string;
   interval_seconds: number;
+  cpu_model?: string;
+  cpu_count?: number;
+  gpu_model?: string;
+  gpu_count?: number;
+  net_rx_mb_month?: number;
+  net_tx_mb_month?: number;
   gpu_process_count: number;
   cpu_process_count: number;
   usage_records_count: number;
   cost_total: number;
+  updated_at: string;
+};
+
+export type UserNodeAccount = {
+  node_id: string;
+  local_username: string;
+  billing_username: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SSHWhitelistEntry = {
+  node_id: string;
+  local_username: string;
+  created_by: string;
+  created_at: string;
   updated_at: string;
 };
 
@@ -165,6 +229,34 @@ export class ApiClient {
     return await this.postJson("/api/auth/login", { username, password });
   }
 
+  async authRegister(payload: {
+    email: string;
+    username: string;
+    password: string;
+    real_name: string;
+    student_id: string;
+    advisor: string;
+    expected_graduation_year: number;
+    phone: string;
+  }): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/auth/register", payload);
+  }
+
+  async authForgotPassword(email: string): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/auth/forgot-password", { email });
+  }
+
+  async authResetPassword(payload: { username: string; token: string; new_password: string }): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/auth/reset-password", payload);
+  }
+
+  async authChangePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }
+
   async authLogout(): Promise<{ ok: boolean }> {
     return await this.postJson("/api/auth/logout", {});
   }
@@ -175,6 +267,59 @@ export class ApiClient {
 
   async userUsage(username: string, limit: number): Promise<{ records: UsageRecord[] }> {
     return await this.getJson(`/api/users/${encodeURIComponent(username)}/usage?limit=${limit}`);
+  }
+
+  async userMe(): Promise<UserProfile> {
+    return await this.getJson("/api/user/me");
+  }
+
+  async userMyBalance(): Promise<BalanceResp> {
+    return await this.getJson("/api/user/me/balance");
+  }
+
+  async userMyUsage(limit: number): Promise<{ records: UsageRecord[] }> {
+    return await this.getJson(`/api/user/me/usage?limit=${limit}`);
+  }
+
+  async userAccounts(): Promise<{ accounts: UserNodeAccount[] }> {
+    return await this.getJson("/api/user/accounts");
+  }
+
+  async userUpsertAccount(nodeId: string, localUsername: string): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/user/accounts", { node_id: nodeId, local_username: localUsername });
+  }
+
+  async userUpdateAccount(payload: {
+    old_node_id: string;
+    old_local_username: string;
+    new_node_id: string;
+    new_local_username: string;
+  }): Promise<{ ok: boolean }> {
+    const res = await fetch(this.url("/api/user/accounts"), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...this.csrfHeaders() },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await this.readText(res);
+      throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
+    }
+    return (await res.json()) as { ok: boolean };
+  }
+
+  async userDeleteAccount(nodeId: string, localUsername: string): Promise<{ ok: boolean }> {
+    const q = new URLSearchParams({ node_id: nodeId, local_username: localUsername });
+    const res = await fetch(this.url(`/api/user/accounts?${q.toString()}`), {
+      method: "DELETE",
+      headers: { ...this.csrfHeaders() },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const text = await this.readText(res);
+      throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
+    }
+    return (await res.json()) as { ok: boolean };
   }
 
   async registryResolve(nodeId: string, localUsername: string): Promise<RegistryResolveResp> {
@@ -282,5 +427,123 @@ export class ApiClient {
       throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
     }
     return await res.blob();
+  }
+
+  async adminGetMailSettings(): Promise<{
+    smtp_host: string;
+    smtp_port: number;
+    smtp_user: string;
+    smtp_password_set: boolean;
+    from_email: string;
+    from_name: string;
+  }> {
+    return await this.getJson("/api/admin/mail/settings", this.adminHeaders());
+  }
+
+  async adminSetMailSettings(payload: {
+    smtp_host: string;
+    smtp_port: number;
+    smtp_user: string;
+    smtp_pass: string;
+    update_pass: boolean;
+    from_email: string;
+    from_name: string;
+  }): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/admin/mail/settings", payload, this.adminHeaders());
+  }
+
+  async adminMailTest(username: string): Promise<{ ok: boolean; email: string }> {
+    return await this.postJson("/api/admin/mail/test", { username }, this.adminHeaders());
+  }
+
+  async adminAccounts(billingUsername: string): Promise<{ accounts: UserNodeAccount[] }> {
+    return await this.getJson(`/api/admin/accounts?billing_username=${encodeURIComponent(billingUsername)}`, this.adminHeaders());
+  }
+
+  async adminUpsertAccount(payload: { billing_username: string; node_id: string; local_username: string }): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/admin/accounts", payload, this.adminHeaders());
+  }
+
+  async adminUpdateAccount(payload: {
+    old_billing_username: string;
+    old_node_id: string;
+    old_local_username: string;
+    new_billing_username: string;
+    new_node_id: string;
+    new_local_username: string;
+  }): Promise<{ ok: boolean }> {
+    const res = await fetch(this.url("/api/admin/accounts"), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...this.adminHeaders(), ...this.csrfHeaders() },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await this.readText(res);
+      throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
+    }
+    return (await res.json()) as { ok: boolean };
+  }
+
+  async adminDeleteAccount(params: { billing_username: string; node_id: string; local_username: string }): Promise<{ ok: boolean }> {
+    const q = new URLSearchParams(params);
+    const res = await fetch(this.url(`/api/admin/accounts?${q.toString()}`), {
+      method: "DELETE",
+      headers: { ...this.adminHeaders(), ...this.csrfHeaders() },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const text = await this.readText(res);
+      throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
+    }
+    return (await res.json()) as { ok: boolean };
+  }
+
+  async adminWhitelist(nodeId = ""): Promise<{ entries: SSHWhitelistEntry[] }> {
+    const q = new URLSearchParams();
+    if (nodeId) q.set("node_id", nodeId);
+    return await this.getJson(`/api/admin/whitelist?${q.toString()}`, this.adminHeaders());
+  }
+
+  async adminUpsertWhitelist(nodeId: string, usernames: string[]): Promise<{ ok: boolean }> {
+    return await this.postJson("/api/admin/whitelist", { node_id: nodeId, usernames }, this.adminHeaders());
+  }
+
+  async adminDeleteWhitelist(nodeId: string, localUsername: string): Promise<{ ok: boolean }> {
+    const q = new URLSearchParams({ node_id: nodeId, local_username: localUsername });
+    const res = await fetch(this.url(`/api/admin/whitelist?${q.toString()}`), {
+      method: "DELETE",
+      headers: { ...this.adminHeaders(), ...this.csrfHeaders() },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const text = await this.readText(res);
+      throw { message: `请求失败：${res.status}`, status: res.status, body: text } satisfies ApiError;
+    }
+    return (await res.json()) as { ok: boolean };
+  }
+
+  async adminStatsUsers(params: { from?: string; to?: string; limit?: number }): Promise<{ from: string; to: string; rows: UsageUserSummary[] }> {
+    const q = new URLSearchParams();
+    if (params.from) q.set("from", params.from);
+    if (params.to) q.set("to", params.to);
+    q.set("limit", String(params.limit ?? 1000));
+    return await this.getJson(`/api/admin/stats/users?${q.toString()}`, this.adminHeaders());
+  }
+
+  async adminStatsMonthly(params: { from?: string; to?: string; limit?: number }): Promise<{ from: string; to: string; rows: UsageMonthlySummary[] }> {
+    const q = new URLSearchParams();
+    if (params.from) q.set("from", params.from);
+    if (params.to) q.set("to", params.to);
+    q.set("limit", String(params.limit ?? 20000));
+    return await this.getJson(`/api/admin/stats/monthly?${q.toString()}`, this.adminHeaders());
+  }
+
+  async adminStatsRecharges(params: { from?: string; to?: string; limit?: number }): Promise<{ from: string; to: string; rows: RechargeSummary[] }> {
+    const q = new URLSearchParams();
+    if (params.from) q.set("from", params.from);
+    if (params.to) q.set("to", params.to);
+    q.set("limit", String(params.limit ?? 1000));
+    return await this.getJson(`/api/admin/stats/recharges?${q.toString()}`, this.adminHeaders());
   }
 }

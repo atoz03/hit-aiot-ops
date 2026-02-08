@@ -6,6 +6,15 @@
 - 控制器：`controller/`（Golang + Gin + PostgreSQL）接收上报、落库、计费（GPU + CPU）、下发限制动作（含 CPU 限流）
 - 用户侧：`tools/check_quota.sh`（Bash Hook）在用户启动疑似 GPU 任务前检查余额状态
 
+## 日常启动
+```bash
+cd controller
+go test ./...
+go run . --config ../config/controller.yaml
+cd ../web
+pnpm build
+```
+
 ## 快速开始（本机开发）
 
 ### 0) 依赖下载（网络受限场景）

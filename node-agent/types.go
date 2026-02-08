@@ -7,6 +7,12 @@ type MetricsData struct {
 	Timestamp       string        `json:"timestamp"` // RFC3339
 	ReportID        string        `json:"report_id"`
 	IntervalSeconds int           `json:"interval_seconds,omitempty"`
+	CPUModel        string        `json:"cpu_model,omitempty"`
+	CPUCount        int           `json:"cpu_count,omitempty"`
+	GPUModel        string        `json:"gpu_model,omitempty"`
+	GPUCount        int           `json:"gpu_count,omitempty"`
+	NetRxBytes      uint64        `json:"net_rx_bytes,omitempty"`
+	NetTxBytes      uint64        `json:"net_tx_bytes,omitempty"`
 	Users           []UserProcess `json:"users"`
 }
 
@@ -16,6 +22,7 @@ type UserProcess struct {
 	CPUPercent float64    `json:"cpu_percent"`
 	MemoryMB   float64    `json:"memory_mb"`
 	GPUUsage   []GPUUsage `json:"gpu_usage"`
+	Command    string     `json:"command,omitempty"`
 }
 
 type GPUUsage struct {

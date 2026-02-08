@@ -41,6 +41,14 @@ session_hours: 8
 # 是否强制 cookie secure（HTTPS 下建议 true；HTTP 调试可 false）
 cookie_secure: false
 
+# 密码找回邮件默认配置（也可在管理员 Web 页面中在线配置）
+smtp_host: ""
+smtp_port: 587
+smtp_user: ""
+smtp_pass: ""
+from_email: ""
+from_name: "HIT-AIOT-OPS团队"
+
 # 默认余额（首次见到的新用户）
 default_balance: 100
 

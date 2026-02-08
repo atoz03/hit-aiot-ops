@@ -96,6 +96,32 @@ func (a *NodeAgent) getBusIDToIndexMap(ctx context.Context) (map[string]int32, e
 	return out, nil
 }
 
+func (a *NodeAgent) getGPUInventory(ctx context.Context) (string, int, error) {
+	lines, err := a.runNvidiaSMI(ctx,
+		"--query-gpu=name",
+		"--format=csv,noheader",
+	)
+	if err != nil {
+		if errors.Is(err, errNoNvidiaSMI) {
+			return "", 0, nil
+		}
+		return "", 0, err
+	}
+	count := 0
+	model := ""
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		count++
+		if model == "" {
+			model = name
+		}
+	}
+	return model, count, nil
+}
+
 func (a *NodeAgent) runNvidiaSMI(ctx context.Context, args ...string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "nvidia-smi", args...)
 	var stderr bytes.Buffer

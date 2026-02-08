@@ -15,8 +15,11 @@ CREATE TABLE IF NOT EXISTS usage_records (
     node_id VARCHAR(50) NOT NULL,
     username VARCHAR(50) NOT NULL,
     timestamp TIMESTAMP NOT NULL,
+    pid INT NOT NULL DEFAULT 0,
     cpu_percent FLOAT NOT NULL,
     memory_mb FLOAT NOT NULL,
+    gpu_count INT NOT NULL DEFAULT 0,
+    command TEXT NOT NULL DEFAULT '',
     gpu_usage JSONB NOT NULL,
     cost DECIMAL(10,4) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -58,6 +61,15 @@ CREATE TABLE IF NOT EXISTS nodes (
     last_report_id TEXT NOT NULL,
     last_report_ts TIMESTAMP NOT NULL,
     interval_seconds INT NOT NULL,
+    cpu_model TEXT NOT NULL DEFAULT '',
+    cpu_count INT NOT NULL DEFAULT 0,
+    gpu_model TEXT NOT NULL DEFAULT '',
+    gpu_count INT NOT NULL DEFAULT 0,
+    net_rx_bytes BIGINT NOT NULL DEFAULT 0,
+    net_tx_bytes BIGINT NOT NULL DEFAULT 0,
+    net_rx_mb_month DOUBLE PRECISION NOT NULL DEFAULT 0,
+    net_tx_mb_month DOUBLE PRECISION NOT NULL DEFAULT 0,
+    traffic_month VARCHAR(7) NOT NULL DEFAULT '',
     gpu_process_count INT NOT NULL DEFAULT 0,
     cpu_process_count INT NOT NULL DEFAULT 0,
     usage_records_count INT NOT NULL DEFAULT 0,
@@ -102,6 +114,46 @@ CREATE TABLE IF NOT EXISTS user_requests (
 CREATE INDEX IF NOT EXISTS idx_usage_username ON usage_records(username);
 CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_records(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_node ON usage_records(node_id);
+CREATE INDEX IF NOT EXISTS idx_usage_timestamp_username ON usage_records(timestamp, username);
 CREATE INDEX IF NOT EXISTS idx_user_node_accounts_billing ON user_node_accounts(billing_username);
 CREATE INDEX IF NOT EXISTS idx_user_requests_status ON user_requests(status);
 CREATE INDEX IF NOT EXISTS idx_user_requests_billing ON user_requests(billing_username);
+
+-- 普通用户账号（Web 登录）
+CREATE TABLE IF NOT EXISTS user_accounts (
+    username VARCHAR(50) PRIMARY KEY,
+    email VARCHAR(120) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    real_name VARCHAR(80) NOT NULL,
+    student_id VARCHAR(40) NOT NULL,
+    advisor VARCHAR(80) NOT NULL,
+    expected_graduation_year INT NOT NULL,
+    phone VARCHAR(40) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    last_login_at TIMESTAMP NULL,
+    reset_token_hash TEXT NULL,
+    reset_token_expire_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_accounts_email ON user_accounts(email);
+
+-- 应用配置（如 SMTP）
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- SSH 白名单（允许不注册直接登录）
+CREATE TABLE IF NOT EXISTS ssh_whitelist (
+    node_id VARCHAR(50) NOT NULL,  -- 具体节点或 "*" 表示所有节点
+    local_username VARCHAR(50) NOT NULL,
+    created_by VARCHAR(50) NOT NULL DEFAULT 'admin',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (node_id, local_username)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ssh_whitelist_user ON ssh_whitelist(local_username);

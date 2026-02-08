@@ -43,6 +43,14 @@ type Config struct {
 	SessionHours int  `yaml:"session_hours"`
 	CookieSecure bool `yaml:"cookie_secure"`
 
+	// 邮件找回密码默认配置（可在管理员页面里在线修改）
+	SMTPHost  string `yaml:"smtp_host"`
+	SMTPPort  int    `yaml:"smtp_port"`
+	SMTPUser  string `yaml:"smtp_user"`
+	SMTPPass  string `yaml:"smtp_pass"`
+	FromEmail string `yaml:"from_email"`
+	FromName  string `yaml:"from_name"`
+
 	MigrationDir string `yaml:"migration_dir"`
 	WebDir       string `yaml:"web_dir"`
 }
@@ -98,6 +106,9 @@ func (c *Config) Validate() error {
 		if len(c.AuthSecret) < 16 {
 			return errors.New("auth_secret 长度过短：建议至少 16 字符（建议 openssl rand -hex 32）")
 		}
+	}
+	if c.SMTPPort < 0 || c.SMTPPort > 65535 {
+		return errors.New("smtp_port 必须在 [0, 65535]")
 	}
 	return nil
 }

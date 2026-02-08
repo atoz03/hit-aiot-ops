@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/shirou/gopsutil/v3/cpu"
+	gonet "github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
@@ -20,10 +23,22 @@ func (a *NodeAgent) CollectMetrics(ctx context.Context) (*MetricsData, error) {
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Users:     []UserProcess{},
 	}
+	metrics.CPUCount = a.numCPU
+	if infos, err := cpu.InfoWithContext(ctx); err == nil && len(infos) > 0 {
+		metrics.CPUModel = strings.TrimSpace(infos[0].ModelName)
+	}
 
 	gpuMap, err := a.getGPUUsageMap(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if model, count, err := a.getGPUInventory(ctx); err == nil {
+		metrics.GPUModel = model
+		metrics.GPUCount = count
+	}
+	if ioStats, err := gonet.IOCountersWithContext(ctx, false); err == nil && len(ioStats) > 0 {
+		metrics.NetRxBytes = ioStats[0].BytesRecv
+		metrics.NetTxBytes = ioStats[0].BytesSent
 	}
 
 	// CPU 计费需要观察 CPU-only 进程，因此进行一次全量扫描；
@@ -60,6 +75,11 @@ func (a *NodeAgent) CollectMetrics(ctx context.Context) (*MetricsData, error) {
 		if memInfo != nil {
 			memoryMB = float64(memInfo.RSS) / 1024 / 1024
 		}
+		cmdline, _ := proc.Cmdline()
+		cmdline = strings.TrimSpace(cmdline)
+		if len(cmdline) > 256 {
+			cmdline = cmdline[:256]
+		}
 
 		metrics.Users = append(metrics.Users, UserProcess{
 			Username:   username,
@@ -67,6 +87,7 @@ func (a *NodeAgent) CollectMetrics(ctx context.Context) (*MetricsData, error) {
 			CPUPercent: cpuPercent,
 			MemoryMB:   memoryMB,
 			GPUUsage:   gpuUsage,
+			Command:    cmdline,
 		})
 	}
 

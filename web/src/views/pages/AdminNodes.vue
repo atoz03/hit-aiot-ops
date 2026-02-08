@@ -137,6 +137,26 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="CPU 信息" min-width="200">
+          <template #default="{ row }">
+            <el-text>{{ row.cpu_model || "-" }} ({{ row.cpu_count || 0 }})</el-text>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="GPU 信息" min-width="200">
+          <template #default="{ row }">
+            <el-text>{{ row.gpu_model || "-" }} ({{ row.gpu_count || 0 }})</el-text>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="月流量下行(MB)" width="150" align="right">
+          <template #default="{ row }">{{ (row.net_rx_mb_month || 0).toFixed(2) }}</template>
+        </el-table-column>
+
+        <el-table-column label="月流量上行(MB)" width="150" align="right">
+          <template #default="{ row }">{{ (row.net_tx_mb_month || 0).toFixed(2) }}</template>
+        </el-table-column>
+
         <el-table-column prop="last_report_id" label="Report ID" min-width="200">
           <template #default="{ row }">
             <el-text type="info" size="small" style="font-family: monospace">

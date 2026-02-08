@@ -31,7 +31,16 @@ func (s *Server) handleRegistryResolve(c *gin.Context) {
 	}
 
 	if !found {
-		c.JSON(http.StatusOK, gin.H{"registered": false})
+		whitelisted, err := s.store.IsWhitelisted(ctx, nodeID, localUsername)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !whitelisted {
+			c.JSON(http.StatusOK, gin.H{"registered": false})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"registered": true, "billing_username": localUsername, "whitelisted": true})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"registered": true, "billing_username": billing})
@@ -44,7 +53,7 @@ func (s *Server) handleRegistryNodeUsersTxt(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "node_id 不能为空"})
 		return
 	}
-	users, err := s.store.ListRegisteredLocalUsersByNode(c.Request.Context(), nodeID, 200000)
+	users, err := s.store.ListAllowedLocalUsersByNode(c.Request.Context(), nodeID, 200000)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
